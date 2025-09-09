@@ -26,7 +26,8 @@ data class MonthlyBillEntity(
     val year: Int,
     val month: Int, // 1 for Jan, 12 for Dec
 
-    var tenantNameAtBillingTime: String? = null, // Added new field
+    var tenantIdAtBillingTime: Int? = null, // Added for robust tenant filtering
+    var tenantNameAtBillingTime: String? = null,
 
     var rentAtBillingTime: Double = 0.0,
     var electricityBill: Double = 0.0,

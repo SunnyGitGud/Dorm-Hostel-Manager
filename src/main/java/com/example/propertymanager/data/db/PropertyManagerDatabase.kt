@@ -23,7 +23,7 @@ import com.example.propertymanager.data.entities.MonthlyBillEntity
         TenantEntity::class,
         MonthlyBillEntity::class
     ],
-    version = 6, // Incremented version to 6
+    version = 7, // Incremented version to 7
     exportSchema = false
 )
 abstract class PropertyManagerDatabase : RoomDatabase() {
