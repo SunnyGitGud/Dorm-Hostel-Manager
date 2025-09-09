@@ -21,6 +21,9 @@ data class TenantEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val roomId: Int,
     val name: String,
+    val mobile: String,
+    val imageUri: String? = null, // New field for tenant's photo
+    val assetUris: List<String> = emptyList(), // New field for other asset URIs
     val moveInDate: Long, // Timestamp representing the start of occupancy
     var moveOutDate: Long? = null // Timestamp, null if currently active/occupying
 )

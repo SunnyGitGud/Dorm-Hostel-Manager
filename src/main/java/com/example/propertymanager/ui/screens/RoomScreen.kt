@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -37,19 +38,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-// import androidx.compose.ui.text.input.KeyboardType // No longer needed for phone
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.propertymanager.data.model.RoomWithTenant
 import com.example.propertymanager.ui.viewmodel.RoomViewModel
-import java.text.SimpleDateFormat
-import java.util.Locale
-
-fun formatDate(timestamp: Long?): String {
-    if (timestamp == null || timestamp == 0L) return "N/A"
-    val sdf = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-    return sdf.format(timestamp)
-}
+import com.example.propertymanager.utils.formatDate // Corrected import
+// Removed local formatDate function
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,10 +85,10 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
                             tenantPendingRemoval = roomWithTenantToRemove
                             showConfirmRemoveTenantDialog = true
                         },
-                        onViewDetails = { pId, rId ->
-                            navController.navigate("room_details/$pId/$rId")
+                        onViewDetails = { pId, rId -> // Ensure propertyId is available if needed from roomWithTenant or passed
+                            navController.navigate("room_details/${roomWithTenant.room.propertyId}/$rId")
                         },
-                        propertyId = propertyId
+                        propertyId = propertyId // This propertyId is the one for the current screen context
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -103,10 +98,14 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
         if (showAddRoomDialog) {
             AddRoomDialog(
                 onDismiss = { showAddRoomDialog = false },
-                onAddRoom = { name, rentString ->
+                onAddRoom = { name, rentString, electricityRateString, initialMeterReadingString -> // Updated lambda
                     val rent = rentString.toDoubleOrNull()
-                    if (rent != null && rent > 0) {
-                        roomViewModel.addRoom(name, rent)
+                    val electricityRate = electricityRateString.toDoubleOrNull()
+                    val initialMeterReading = initialMeterReadingString.toDoubleOrNull()
+                    
+                    // ViewModel call will be updated later to include initialMeterReading
+                    if (rent != null && electricityRate != null) { 
+                        roomViewModel.addRoom(name, rent, electricityRate, initialMeterReading) // Pass initialMeterReading
                         showAddRoomDialog = false
                     }
                 }
@@ -120,8 +119,8 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
                     showAddEditTenantDialog = false
                     selectedRoomForTenantAction = null
                 },
-                onConfirm = { roomId, name, moveInDate, existingTenantId -> // Updated signature
-                    roomViewModel.addOrUpdateTenantDetails(roomId, name, moveInDate, existingTenantId) // Updated call
+                onConfirm = { roomId, name, mobile, moveInDate, existingTenantId ->
+                    roomViewModel.addOrUpdateTenantDetails(roomId, name, mobile, moveInDate, existingTenantId)
                     showAddEditTenantDialog = false
                     selectedRoomForTenantAction = null
                 }
@@ -139,7 +138,7 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
                 },
                 onConfirm = {
                     if (tenantIdToRemove != null) {
-                        roomViewModel.recordTenantMoveOutDate(tenantIdToRemove, System.currentTimeMillis()) // Updated call
+                        roomViewModel.recordTenantMoveOutDate(tenantIdToRemove, System.currentTimeMillis())
                     }
                     showConfirmRemoveTenantDialog = false
                     tenantPendingRemoval = null
@@ -155,7 +154,7 @@ fun RoomItem(
     onAddEditTenant: (RoomWithTenant) -> Unit,
     onRemoveTenant: (RoomWithTenant) -> Unit,
     onViewDetails: (propertyId: Int, roomId: Int) -> Unit,
-    propertyId: Int
+    propertyId: Int // This is the propertyId of the screen, not necessarily the room's propertyId if structure allows rooms from multiple props here
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -164,12 +163,22 @@ fun RoomItem(
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = "Room: ${roomWithTenant.room.name}", style = MaterialTheme.typography.titleMedium)
             Text(text = "Rent: $${String.format("%.2f", roomWithTenant.room.rent)}", style = MaterialTheme.typography.bodySmall)
+            Text(
+                text = "Elec. Rate: $${String.format("%.2f", roomWithTenant.room.electricityRatePerUnit)}/unit", 
+                style = MaterialTheme.typography.bodySmall
+            )
+            roomWithTenant.room.initialMeterReading?.let {
+                Text(
+                    text = "Initial Reading: $it units on ${formatDate(roomWithTenant.room.initialMeterReadingDate)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
             Text("Tenant Info:", style = MaterialTheme.typography.titleSmall)
             if (roomWithTenant.tenant != null) {
                 Text("Name: ${roomWithTenant.tenant.name}", style = MaterialTheme.typography.bodyMedium)
-                // Text("Phone: ${roomWithTenant.tenant.phone}", style = MaterialTheme.typography.bodyMedium) // Removed phone
+                Text("Mobile: ${roomWithTenant.tenant.mobile}", style = MaterialTheme.typography.bodyMedium)
                 Text("Move-in: ${formatDate(roomWithTenant.tenant.moveInDate)}", style = MaterialTheme.typography.bodyMedium)
                 if (roomWithTenant.tenant.moveOutDate != null) {
                     Text("Move-out: ${formatDate(roomWithTenant.tenant.moveOutDate)}", style = MaterialTheme.typography.bodyMedium)
@@ -184,7 +193,6 @@ fun RoomItem(
                         Icon(Icons.Filled.Edit, contentDescription = "Edit Tenant", modifier = Modifier.padding(end = 4.dp))
                         Text("Edit Tenant")
                     }
-                    // Only show remove button if tenant is active (no moveOutDate)
                     if (roomWithTenant.tenant.moveOutDate == null) {
                         IconButton(onClick = { onRemoveTenant(roomWithTenant) }) {
                             Icon(Icons.Filled.Delete, contentDescription = "Record Move-out", tint = MaterialTheme.colorScheme.error)
@@ -201,7 +209,7 @@ fun RoomItem(
             }
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedButton(
-                onClick = { onViewDetails(propertyId, roomWithTenant.room.id) },
+                onClick = { onViewDetails(roomWithTenant.room.propertyId, roomWithTenant.room.id) }, // Use room's own propertyId
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Filled.ArrowForward, contentDescription = "View Details", modifier = Modifier.padding(end = 4.dp))
@@ -212,7 +220,7 @@ fun RoomItem(
 }
 
 @Composable
-fun ConfirmRemoveTenantDialog( // Renamed from ConfirmRemoveTenantDialog to reflect it's now a "move-out"
+fun ConfirmRemoveTenantDialog(
     tenantName: String,
     roomName: String,
     onDismiss: () -> Unit,
@@ -240,13 +248,12 @@ fun ConfirmRemoveTenantDialog( // Renamed from ConfirmRemoveTenantDialog to refl
 fun AddEditTenantDialog(
     roomWithTenant: RoomWithTenant,
     onDismiss: () -> Unit,
-    onConfirm: (roomId: Int, name: String, moveInDate: Long, existingTenantId: Int?) -> Unit // Updated signature
+    onConfirm: (roomId: Int, name: String, mobile: String, moveInDate: Long, existingTenantId: Int?) -> Unit
 ) {
     var name by remember(roomWithTenant.tenant) { mutableStateOf(roomWithTenant.tenant?.name ?: "") }
+    var mobile by remember(roomWithTenant.tenant) { mutableStateOf(roomWithTenant.tenant?.mobile ?: "") }
     var nameError by remember { mutableStateOf<String?>(null) }
-    // Add state for moveInDate if you want to allow editing it. For now, new tenants get current time.
-    // var moveInDate by remember { mutableStateOf(roomWithTenant.tenant?.moveInDate ?: System.currentTimeMillis()) }
-
+    var mobileError by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -258,16 +265,25 @@ fun AddEditTenantDialog(
                     onValueChange = { name = it; nameError = null },
                     label = { Text("Tenant Name") },
                     isError = nameError != null,
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 if (nameError != null) {
                     Text(nameError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
-                //Spacer(modifier = Modifier.height(8.dp))
-                // OutlinedTextField for phone removed
-                // Consider adding an OutlinedTextField for moveInDate if it should be editable
-                // For now, moveInDate for new tenants is System.currentTimeMillis()
-                // For editing existing tenants, their original moveInDate is preserved by default if not explicitly changed.
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = mobile,
+                    onValueChange = { mobile = it; mobileError = null },
+                    label = { Text("Tenant Mobile") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    isError = mobileError != null,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (mobileError != null) {
+                    Text(mobileError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         confirmButton = {
@@ -278,11 +294,15 @@ fun AddEditTenantDialog(
                         nameError = "Name cannot be empty"
                         valid = false
                     }
-                    // phone validation removed
+                    if (mobile.isBlank()) {
+                        mobileError = "Mobile cannot be empty"
+                        valid = false
+                    }
+
                     if (valid) {
                         val existingTenantId = if (roomWithTenant.tenant?.moveOutDate == null) roomWithTenant.tenant?.id else null
-                        val moveInDateToUse = roomWithTenant.tenant?.moveInDate ?: System.currentTimeMillis() // Use existing or new
-                        onConfirm(roomWithTenant.room.id, name, moveInDateToUse, existingTenantId)
+                        val moveInDateToUse = roomWithTenant.tenant?.moveInDate ?: System.currentTimeMillis()
+                        onConfirm(roomWithTenant.room.id, name, mobile, moveInDateToUse, existingTenantId)
                     }
                 }
             ) {
@@ -301,12 +321,17 @@ fun AddEditTenantDialog(
 @Composable
 fun AddRoomDialog(
     onDismiss: () -> Unit,
-    onAddRoom: (name: String, rent: String) -> Unit
+    onAddRoom: (name: String, rent: String, electricityRate: String, initialMeterReading: String) -> Unit // Updated lambda signature
 ) {
     var name by remember { mutableStateOf("") }
-    var rent by remember { mutableStateOf("") } // Corrected typo here from mutableStateOF
+    var rent by remember { mutableStateOf("") }
+    var electricityRateString by remember { mutableStateOf("10.0") } // Default rate
+    var initialMeterReadingString by remember { mutableStateOf("") } // New state for initial meter reading
+
     var nameError by remember { mutableStateOf<String?>(null) }
     var rentError by remember { mutableStateOf<String?>(null) }
+    var electricityRateError by remember { mutableStateOf<String?>(null) }
+    var initialMeterReadingError by remember { mutableStateOf<String?>(null) } // New state for error
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -318,7 +343,8 @@ fun AddRoomDialog(
                     onValueChange = { name = it; nameError = null },
                     label = { Text("Room Name/Number") },
                     isError = nameError != null,
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 if (nameError != null) {
                     Text(nameError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -327,13 +353,40 @@ fun AddRoomDialog(
                 OutlinedTextField(
                     value = rent,
                     onValueChange = { rent = it; rentError = null },
-                    label = { Text("Monthly Rent") },
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    label = { Text("Monthly Rent (₹)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     isError = rentError != null,
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 if (rentError != null) {
                     Text(rentError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = electricityRateString,
+                    onValueChange = { electricityRateString = it; electricityRateError = null },
+                    label = { Text("Electricity Rate per Unit (₹)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = electricityRateError != null,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (electricityRateError != null) {
+                    Text(electricityRateError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField( // New TextField for Initial Meter Reading
+                    value = initialMeterReadingString,
+                    onValueChange = { initialMeterReadingString = it; initialMeterReadingError = null },
+                    label = { Text("Initial Meter Reading (Optional)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = initialMeterReadingError != null,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (initialMeterReadingError != null) {
+                    Text(initialMeterReadingError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
@@ -345,6 +398,7 @@ fun AddRoomDialog(
                         nameError = "Name cannot be empty"
                         valid = false
                     }
+
                     val rentDouble = rent.toDoubleOrNull()
                     if (rent.isBlank()) {
                         rentError = "Rent cannot be empty"
@@ -354,8 +408,23 @@ fun AddRoomDialog(
                         valid = false
                     }
 
+                    val electricityRateDouble = electricityRateString.toDoubleOrNull()
+                    if (electricityRateString.isBlank()) {
+                        electricityRateError = "Rate cannot be empty"
+                        valid = false
+                    } else if (electricityRateDouble == null || electricityRateDouble < 0) {
+                        electricityRateError = "Please enter a valid rate (e.g., 10.0)"
+                        valid = false
+                    }
+
+                    val initialMeterReadingDouble = initialMeterReadingString.toDoubleOrNull()
+                    if (initialMeterReadingString.isNotBlank() && (initialMeterReadingDouble == null || initialMeterReadingDouble < 0)) {
+                        initialMeterReadingError = "Please enter a valid non-negative reading or leave blank"
+                        valid = false
+                    }
+
                     if (valid) {
-                        onAddRoom(name, rent)
+                        onAddRoom(name, rent, electricityRateString, initialMeterReadingString) // Pass new value
                     }
                 }
             ) {
