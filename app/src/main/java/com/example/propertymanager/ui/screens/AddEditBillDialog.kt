@@ -1,10 +1,13 @@
 package com.example.propertymanager.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width // Added import
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -13,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -26,8 +30,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -44,46 +50,53 @@ import kotlin.math.max
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddEditBillDialog(
-    bill: MonthlyBillEntity,
+    bill: MonthlyBillEntity, // This is the initial bill state from ViewModel
     roomName: String,
-    isCurrentActiveBill: Boolean, // New parameter
-    currentRoomInitialMeterReading: Double?, // For current active bill calculation
-    currentRoomElectricityRate: Double,   // For current active bill calculation
+    isCurrentActiveBill: Boolean,
+    currentRoomInitialMeterReading: Double?,
+    currentRoomElectricityRate: Double,
+    fullRoomRent: Double,
     onDismiss: () -> Unit,
-    onBillUpdated: (MonthlyBillEntity) -> Unit,
+    onBillUpdated: (MonthlyBillEntity) -> Unit, // Callback for intermediate updates
     onSave: (MonthlyBillEntity) -> Unit
 ) {
-    val currentBillState = remember(bill) { mutableStateOf(bill.copy()) }
+    // currentBillState holds the mutable version of the bill being edited in the dialog
+    val currentBillState = remember(bill.id) { mutableStateOf(bill.copy()) }
+    // Stash the original rent from the bill passed to the dialog (likely pro-rata)
+    val initialRentForThisDialogInstance = remember(bill.id) { bill.rentAtBillingTime }
 
-    val wasBillForOccupiedRoom = remember(currentBillState.value.tenantNameAtBillingTime, currentBillState.value.rentAtBillingTime) {
-        currentBillState.value.tenantNameAtBillingTime != "Not Occupied" && currentBillState.value.rentAtBillingTime >= 0.0
-    }
+    var applyFullRentOverride by remember(bill.id, isCurrentActiveBill) { mutableStateOf(false) }
 
-    val isMeterReadingActuallyEditable = remember(isCurrentActiveBill, wasBillForOccupiedRoom, currentBillState.value.isInitialReadingRolledOver) {
-        isCurrentActiveBill && wasBillForOccupiedRoom && !currentBillState.value.isInitialReadingRolledOver
-    }
-
-    val canRecordPayment = remember(currentBillState.value.tenantIdAtBillingTime) {
-        currentBillState.value.tenantIdAtBillingTime != null
+    // Determined once based on initial bill state passed to dialog
+    val wasBillForOccupiedRoomInitially = remember(bill.id) {
+        bill.tenantNameAtBillingTime != "Not Occupied" && bill.rentAtBillingTime >= 0.0
     }
 
-    var monthEndMeterReadingString by remember(
-        currentBillState.value.id, // Re-init when bill id changes
-        currentBillState.value.monthEndMeterReading,
-        wasBillForOccupiedRoom // Re-init if occupied status of original bill was different
-    ) {
-        mutableStateOf(
-            if (wasBillForOccupiedRoom) currentBillState.value.monthEndMeterReading?.toString() ?: "" else ""
-        )
+    val isMeterReadingActuallyEditable = remember(bill.id, isCurrentActiveBill, wasBillForOccupiedRoomInitially) {
+        isCurrentActiveBill && wasBillForOccupiedRoomInitially && !bill.isInitialReadingRolledOver
     }
-    var waterBillString by remember(currentBillState.value.id, currentBillState.value.waterBill, wasBillForOccupiedRoom) {
-        mutableStateOf(if (wasBillForOccupiedRoom) currentBillState.value.waterBill.takeIf { it > 0 }?.toString() ?: "" else "0.0")
+
+    val canRecordPayment = remember(bill.id) { // Based on initial bill for consistency unless tenant changes
+        bill.tenantIdAtBillingTime != null
     }
-    var otherChargesString by remember(currentBillState.value.id, currentBillState.value.otherCharges, wasBillForOccupiedRoom) {
-        mutableStateOf(if (wasBillForOccupiedRoom) currentBillState.value.otherCharges.takeIf { it > 0 }?.toString() ?: "" else "0.0")
+
+    // Visibility of checkbox is determined once based on initial conditions for this bill instance
+    val showFullRentOverrideCheckbox = remember(bill.id, isCurrentActiveBill, wasBillForOccupiedRoomInitially, initialRentForThisDialogInstance, fullRoomRent) {
+        isCurrentActiveBill && wasBillForOccupiedRoomInitially && (initialRentForThisDialogInstance < fullRoomRent - 0.001) && fullRoomRent > 0
     }
-    var otherChargesDescription by remember(currentBillState.value.id, currentBillState.value.otherChargesDescription, wasBillForOccupiedRoom) {
-        mutableStateOf(if (wasBillForOccupiedRoom) currentBillState.value.otherChargesDescription ?: "" else "")
+
+    // UI state for text fields, keyed to bill.id to reset if a different bill is shown
+    var monthEndMeterReadingString by remember(bill.id, bill.monthEndMeterReading, wasBillForOccupiedRoomInitially) {
+        mutableStateOf(if (wasBillForOccupiedRoomInitially) bill.monthEndMeterReading?.toString() ?: "" else "")
+    }
+    var waterBillString by remember(bill.id, bill.waterBill, wasBillForOccupiedRoomInitially) {
+        mutableStateOf(if (wasBillForOccupiedRoomInitially) bill.waterBill.takeIf { it > 0 }?.toString() ?: "" else "0.0")
+    }
+    var otherChargesString by remember(bill.id, bill.otherCharges, wasBillForOccupiedRoomInitially) {
+        mutableStateOf(if (wasBillForOccupiedRoomInitially) bill.otherCharges.takeIf { it > 0 }?.toString() ?: "" else "0.0")
+    }
+    var otherChargesDescription by remember(bill.id, bill.otherChargesDescription, wasBillForOccupiedRoomInitially) {
+        mutableStateOf(if (wasBillForOccupiedRoomInitially) bill.otherChargesDescription ?: "" else "")
     }
 
     var paymentAmountToRecord by remember { mutableStateOf("") }
@@ -97,70 +110,70 @@ fun AddEditBillDialog(
     }
 
     LaunchedEffect(
-        monthEndMeterReadingString,
-        waterBillString,
-        otherChargesString,
-        otherChargesDescription,
-        wasBillForOccupiedRoom,
-        isMeterReadingActuallyEditable,
-        currentRoomInitialMeterReading,
-        currentRoomElectricityRate,
-        currentBillState.value.isInitialReadingRolledOver // Added to ensure re-trigger if this changes
+        applyFullRentOverride, initialRentForThisDialogInstance, fullRoomRent, // Rent influencing factors
+        monthEndMeterReadingString, waterBillString, otherChargesString, otherChargesDescription, // Editable fields
+        wasBillForOccupiedRoomInitially, isMeterReadingActuallyEditable, // Initial state derived flags
+        currentRoomInitialMeterReading, currentRoomElectricityRate,
+        currentBillState.value.isInitialReadingRolledOver, // This can change with save
+        currentBillState.value.amountPaid, // This changes with record payment
+        bill.id // Ensure recalculation if the underlying bill object changes entirely
     ) {
-        var tempBill = currentBillState.value.copy() // Start with the current state (which is a copy of original bill)
+        // Start with a fresh copy of the original bill for this LaunchedEffect cycle
+        // then layer current UI state and calculations on top.
+        var tempBill = bill.copy(
+            // Preserve payment state from currentBillState as it's modified by Record Payment button
+            amountPaid = currentBillState.value.amountPaid,
+            isFullyPaid = currentBillState.value.isFullyPaid, // This will be recalculated by calculateTotalDue
+            paymentDate = currentBillState.value.paymentDate,
+            isInitialReadingRolledOver = currentBillState.value.isInitialReadingRolledOver // Preserve rollover status
+        )
 
-        if (wasBillForOccupiedRoom) {
+        val newRentToApply = if (showFullRentOverrideCheckbox && applyFullRentOverride) {
+            fullRoomRent
+        } else {
+            initialRentForThisDialogInstance // Revert to initial pro-rata/original rent if override not active
+        }
+        tempBill = tempBill.copy(rentAtBillingTime = newRentToApply)
+
+        if (wasBillForOccupiedRoomInitially) {
             tempBill = tempBill.copy(
                 waterBill = waterBillString.toDoubleOrNull() ?: 0.0,
                 otherCharges = otherChargesString.toDoubleOrNull() ?: 0.0,
                 otherChargesDescription = otherChargesDescription.ifBlank { null }
             )
         } else {
-            tempBill = tempBill.copy(
-                waterBill = 0.0,
-                otherCharges = 0.0,
-                otherChargesDescription = null
-            )
+            // If not occupied initially, these should be zero/null, overriding any text field input
+            tempBill = tempBill.copy(waterBill = 0.0, otherCharges = 0.0, otherChargesDescription = null, monthEndMeterReading = null, electricityUnits = 0.0)
         }
 
         if (isMeterReadingActuallyEditable) {
             val newMonthEndReadingDouble = monthEndMeterReadingString.toDoubleOrNull()
-            tempBill = tempBill.copy(
-                monthEndMeterReading = newMonthEndReadingDouble
-            )
+            tempBill = tempBill.copy(monthEndMeterReading = newMonthEndReadingDouble)
             if (currentRoomInitialMeterReading != null && newMonthEndReadingDouble != null && newMonthEndReadingDouble >= currentRoomInitialMeterReading) {
                 tempBill = tempBill.copy(
                     electricityUnits = newMonthEndReadingDouble - currentRoomInitialMeterReading,
                     electricityRateAtBillingTime = currentRoomElectricityRate
                 )
             } else {
-                tempBill = tempBill.copy(
-                    electricityUnits = 0.0,
-                    electricityRateAtBillingTime = currentRoomElectricityRate
-                )
+                tempBill = tempBill.copy(electricityUnits = 0.0, electricityRateAtBillingTime = currentRoomElectricityRate)
             }
         } else {
-            // For non-editable readings, ensure these are from the original bill's state.
-            // If the original bill was for "Not Occupied", these should be null/0.
-            if (!wasBillForOccupiedRoom) {
-                tempBill = tempBill.copy(
-                    monthEndMeterReading = null,
-                    electricityUnits = 0.0
-                    // electricityRateAtBillingTime is preserved from original bill
-                )
+             if (!wasBillForOccupiedRoomInitially) {
+                // Already handled above if not occupied initially
             } else {
-                 // Preserve original bill's meter reading details if not editable
+                // If occupied but meter reading not editable (e.g., historical bill or already rolled over),
+                // retain the original bill's electricity details (already in tempBill from bill.copy())
                 tempBill = tempBill.copy(
-                    monthEndMeterReading = currentBillState.value.monthEndMeterReading,
-                    electricityUnits = currentBillState.value.electricityUnits,
-                    electricityRateAtBillingTime = currentBillState.value.electricityRateAtBillingTime
+                    monthEndMeterReading = bill.monthEndMeterReading,
+                    electricityUnits = bill.electricityUnits,
+                    electricityRateAtBillingTime = bill.electricityRateAtBillingTime
                 )
             }
         }
 
-        tempBill.calculateTotalDue()
-        currentBillState.value = tempBill // Update the display state
-        onBillUpdated(tempBill)     // Inform the caller about the intermediate state
+        tempBill.calculateTotalDue() // This recalculates total and updates isFullyPaid status
+        currentBillState.value = tempBill // Update the state that UI observes
+        onBillUpdated(tempBill)     // Inform the caller for its own state management
     }
 
     AlertDialog(
@@ -174,7 +187,27 @@ fun AddEditBillDialog(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
+                // Display the rent based on currentBillState, which reflects the override
                 Text("Base Rent: ${currencyFormat.format(currentBillState.value.rentAtBillingTime)}", style = MaterialTheme.typography.bodyLarge)
+
+                if (showFullRentOverrideCheckbox) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(role = Role.Checkbox) {
+                                applyFullRentOverride = !applyFullRentOverride
+                            }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Checkbox(
+                            checked = applyFullRentOverride,
+                            onCheckedChange = { applyFullRentOverride = it }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Charge Full Month's Rent (${currencyFormat.format(fullRoomRent)})")
+                    }
+                }
 
                 val previousDuesOrCredit = currentBillState.value.previousMonthDues
                 if (previousDuesOrCredit != 0.0) {
@@ -205,14 +238,14 @@ fun AddEditBillDialog(
                     enabled = isMeterReadingActuallyEditable
                 )
 
-                if (wasBillForOccupiedRoom && currentBillState.value.electricityUnits != null) {
+                if (wasBillForOccupiedRoomInitially && currentBillState.value.electricityUnits != null) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         "Units Consumed: ${String.format(Locale.getDefault(), "%.2f", currentBillState.value.electricityUnits)}",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
-                if (wasBillForOccupiedRoom && ((currentBillState.value.electricityUnits != null && currentBillState.value.electricityUnits!! > 0.009) || currentBillState.value.electricityBill > 0.009)) {
+                if (wasBillForOccupiedRoomInitially && ((currentBillState.value.electricityUnits != null && currentBillState.value.electricityUnits!! > 0.009) || currentBillState.value.electricityBill > 0.009)) {
                      Spacer(modifier = Modifier.height(4.dp))
                      Text(
                         "Electricity Bill: ${currencyFormat.format(currentBillState.value.electricityBill)}",
@@ -223,28 +256,28 @@ fun AddEditBillDialog(
 
                 OutlinedTextField(
                     value = waterBillString,
-                    onValueChange = { if (wasBillForOccupiedRoom) waterBillString = it },
+                    onValueChange = { if (wasBillForOccupiedRoomInitially) waterBillString = it },
                     label = { Text("Water Bill") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    enabled = wasBillForOccupiedRoom
+                    enabled = wasBillForOccupiedRoomInitially
                 )
                 OutlinedTextField(
                     value = otherChargesString,
-                    onValueChange = { if (wasBillForOccupiedRoom) otherChargesString = it },
+                    onValueChange = { if (wasBillForOccupiedRoomInitially) otherChargesString = it },
                     label = { Text("Other Charges") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    enabled = wasBillForOccupiedRoom
+                    enabled = wasBillForOccupiedRoomInitially
                 )
                 OutlinedTextField(
                     value = otherChargesDescription,
-                    onValueChange = { if (wasBillForOccupiedRoom) otherChargesDescription = it },
+                    onValueChange = { if (wasBillForOccupiedRoomInitially) otherChargesDescription = it },
                     label = { Text("Description for Other Charges") },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = {keyboardController?.hide()}),
                     singleLine = false, modifier = Modifier.fillMaxWidth(),
-                    enabled = wasBillForOccupiedRoom
+                    enabled = wasBillForOccupiedRoomInitially
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -275,7 +308,7 @@ fun AddEditBillDialog(
                     val remainingDueForPayment = max(0.0, currentBillState.value.totalAmountDue - currentBillState.value.amountPaid)
                     if (balance < -0.001) {
                          Text("Status: ${currencyFormat.format(remainingDueForPayment)} remaining", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                    } else if (abs(balance) < 0.001 && currentBillState.value.amountPaid > 0) {
+                    } else if (abs(balance) < 0.001 && currentBillState.value.amountPaid > 0 && currentBillState.value.totalAmountDue > 0) { // Check totalAmountDue > 0 for pending confirmation
                         Text("Status: Cleared (Pending Confirmation)", style = MaterialTheme.typography.bodyMedium)
                     } else {
                          Text("Status: ${currencyFormat.format(remainingDueForPayment)} remaining", style = MaterialTheme.typography.bodyMedium)
@@ -291,7 +324,7 @@ fun AddEditBillDialog(
                         isError = paymentError != null,
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = canRecordPayment
+                        enabled = canRecordPayment && currentBillState.value.totalAmountDue > 0 // Can only pay if amount is due
                     )
                     if (paymentError != null) { Text(paymentError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 
@@ -302,17 +335,13 @@ fun AddEditBillDialog(
                                 paymentError = "Enter a valid positive amount"
                             } else {
                                 val newAmountPaid = currentBillState.value.amountPaid + paymentValue
-                                val isNowFullyPaid = newAmountPaid >= currentBillState.value.totalAmountDue - 0.001
-
                                 var billWithPayment = currentBillState.value.copy(
                                     amountPaid = newAmountPaid,
-                                    isFullyPaid = isNowFullyPaid,
-                                    paymentDate = if (isNowFullyPaid || currentBillState.value.isFullyPaid) System.currentTimeMillis() else currentBillState.value.paymentDate
+                                    // isFullyPaid will be set by calculateTotalDue
+                                    paymentDate = if (newAmountPaid >= currentBillState.value.totalAmountDue - 0.001 || currentBillState.value.isFullyPaid) System.currentTimeMillis() else currentBillState.value.paymentDate
                                 )
-                                // Recalculate total due as payment might affect previous dues if this logic is ever added to calculateTotalDue
-                                // For now, it mainly updates the balance displayed based on new payment.
-                                billWithPayment.calculateTotalDue() 
-                                currentBillState.value = billWithPayment
+                                billWithPayment.calculateTotalDue() // This updates isFullyPaid
+                                currentBillState.value = billWithPayment 
                                 onBillUpdated(billWithPayment) 
 
                                 paymentAmountToRecord = ""
@@ -321,7 +350,7 @@ fun AddEditBillDialog(
                             }
                         },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        enabled = canRecordPayment
+                        enabled = canRecordPayment && currentBillState.value.totalAmountDue > 0 // Can only pay if amount is due
                     ) {
                         Icon(Icons.Filled.Payment, contentDescription = "Record Payment", modifier = Modifier.padding(end = 4.dp))
                         Text("Record This Payment")
@@ -335,3 +364,7 @@ fun AddEditBillDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
+
+// PositiveGreenColor should be defined in a shared file like BillHistoryComponents.kt
+// import androidx.compose.ui.graphics.Color
+// val PositiveGreenColor = Color(0xFF006400) // Dark Green

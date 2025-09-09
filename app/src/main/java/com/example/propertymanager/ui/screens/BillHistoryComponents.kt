@@ -125,7 +125,7 @@ internal fun formatBillHistoryForSharing(
                 if (balance > 0.001) {
                     statusText = "Advance: ${currencyFormat.format(balance)}"
                 } else if (abs(balance) < 0.001) {
-                    statusText = "Cleared (Pending Confirmation)"
+                    statusText = "Paid" // Changed from "Cleared (Pending Confirmation)"
                 } else { // balance < 0
                     statusText = "Due: ${currencyFormat.format(abs(balance))}"
                 }
@@ -188,7 +188,7 @@ internal fun formatSingleBillForSharing(
         if (balance > 0.001) {
             statusText = "Advance: ${currencyFormat.format(balance)}"
         } else if (abs(balance) < 0.001) {
-            statusText = "Cleared (Pending Confirmation)"
+            statusText = "Paid" // Changed from "Cleared (Pending Confirmation)"
         } else { // balance < 0
             statusText = "Due: ${currencyFormat.format(abs(balance))}"
         }
@@ -459,7 +459,7 @@ fun BillHistoryItem(
                     }
                     abs(balance) < 0.001 -> {
                         Text(
-                            text = "Status: Cleared (Pending Confirmation)",
+                            text = "Status: Paid", // Changed from "Status: Cleared (Pending Confirmation)"
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold
                         )

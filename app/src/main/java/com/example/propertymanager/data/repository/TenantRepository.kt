@@ -21,6 +21,11 @@ class TenantRepository(private val tenantDao: TenantDao) {
         return tenantDao.getTenantForRoomAtDate(roomId, dateInMillis)
     }
 
+    // Calls DAO to get the tenant for a specific bill period
+    suspend fun getTenantForBillPeriod(roomId: Int, startOfMonthTimestamp: Long, endOfMonthTimestamp: Long): TenantEntity? {
+        return tenantDao.getTenantForBillPeriod(roomId, startOfMonthTimestamp, endOfMonthTimestamp)
+    }
+
     // Calls DAO to insert or update a tenant, returns the ID
     suspend fun insertOrUpdateTenant(tenant: TenantEntity): Long {
         return tenantDao.insertOrUpdate(tenant)

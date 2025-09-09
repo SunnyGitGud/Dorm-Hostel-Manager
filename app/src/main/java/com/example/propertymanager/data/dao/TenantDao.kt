@@ -28,6 +28,18 @@ interface TenantDao {
     @Query("SELECT * FROM tenants WHERE roomId = :roomId AND moveInDate <= :dateInMillis AND (moveOutDate IS NULL OR moveOutDate >= :dateInMillis) ORDER BY moveInDate DESC LIMIT 1")
     suspend fun getTenantForRoomAtDate(roomId: Int, dateInMillis: Long): TenantEntity?
 
+    // Gets the tenant who was occupying the room at any point within the given bill period (month)
+    // Prioritizes the tenant who moved in latest if multiple were active in that month.
+    @Query("""
+        SELECT * FROM tenants 
+        WHERE roomId = :roomId 
+        AND moveInDate <= :endOfMonthTimestamp 
+        AND (moveOutDate IS NULL OR moveOutDate > :startOfMonthTimestamp) 
+        ORDER BY moveInDate DESC 
+        LIMIT 1
+    """)
+    suspend fun getTenantForBillPeriod(roomId: Int, startOfMonthTimestamp: Long, endOfMonthTimestamp: Long): TenantEntity?
+
     @Query("SELECT * FROM tenants WHERE id = :tenantId LIMIT 1") // Added this method
     suspend fun getTenantById(tenantId: Int): TenantEntity?
 
