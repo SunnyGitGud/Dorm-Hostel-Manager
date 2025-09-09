@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color // Added for custom green color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -49,15 +50,18 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.propertymanager.data.entities.MonthlyBillEntity
 import com.example.propertymanager.data.entities.TenantEntity
-import com.example.propertymanager.utils.formatDate // Corrected import
+import com.example.propertymanager.utils.formatDate 
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import kotlin.math.abs // Added for abs function
 import kotlin.math.max
 
+val PositiveGreenColor = Color(0xFF388E3C) // A Material Design like green
+
 // Helper function to format a list of bills for sharing
-internal fun formatBillHistoryForSharing( // Changed to internal as it's used only within this file now
+internal fun formatBillHistoryForSharing(
     bills: List<MonthlyBillEntity>,
     roomName: String,
     filterYear: String,
@@ -100,14 +104,34 @@ internal fun formatBillHistoryForSharing( // Changed to internal as it's used on
                 val description = bill.otherChargesDescription?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
                 builder.append("Other Charges: ${currencyFormat.format(bill.otherCharges)}$description\n")
             }
-            if (bill.previousMonthDues > 0) {
-                builder.append("Previous Dues: ${currencyFormat.format(bill.previousMonthDues)}\n")
+            // Updated to show previous credit or dues in sharing text
+            if (bill.previousMonthDues != 0.0) {
+                if (bill.previousMonthDues > 0) {
+                    builder.append("Previous Dues: ${currencyFormat.format(bill.previousMonthDues)}\n")
+                } else {
+                    builder.append("Previous Credit: ${currencyFormat.format(abs(bill.previousMonthDues))}\n")
+                }
             }
             builder.append("Total Amount: ${currencyFormat.format(bill.totalAmountDue)}\n")
             builder.append("Amount Paid: ${currencyFormat.format(bill.amountPaid)}\n")
-            val status = if (bill.isFullyPaid) "Fully Paid on ${formatDate(bill.paymentDate)}"
-                         else "Due: ${currencyFormat.format(max(0.0, bill.totalAmountDue - bill.amountPaid))}"
-            builder.append("Status: $status\n")
+            
+            val balance = bill.amountPaid - bill.totalAmountDue
+            var statusText: String 
+            if (bill.isFullyPaid) {
+                statusText = "Fully Paid on ${formatDate(bill.paymentDate)}"
+                if (balance > 0.001) { // Tolerance for double comparison
+                    statusText += " (Advance: ${currencyFormat.format(balance)})"
+                }
+            } else {
+                if (balance > 0.001) {
+                    statusText = "Advance: ${currencyFormat.format(balance)}"
+                } else if (abs(balance) < 0.001) { // Effectively zero balance
+                    statusText = "Cleared (Pending Confirmation)"
+                } else { // balance < 0
+                    statusText = "Due: ${currencyFormat.format(abs(balance))}"
+                }
+            }
+            builder.append("Status: $statusText\n")
             builder.append("------------------------------------\n")
         }
     }
@@ -115,7 +139,7 @@ internal fun formatBillHistoryForSharing( // Changed to internal as it's used on
 }
 
 // Helper function to format a single bill for sharing
-internal fun formatSingleBillForSharing( // Changed to internal
+internal fun formatSingleBillForSharing(
     bill: MonthlyBillEntity,
     roomName: String,
     monthYearFormat: SimpleDateFormat,
@@ -144,14 +168,34 @@ internal fun formatSingleBillForSharing( // Changed to internal
         val description = bill.otherChargesDescription?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
         builder.append("Other Charges: ${currencyFormat.format(bill.otherCharges)}$description\n")
     }
-    if (bill.previousMonthDues > 0) {
-        builder.append("Previous Dues: ${currencyFormat.format(bill.previousMonthDues)}\n")
+    // Updated to show previous credit or dues in sharing text
+    if (bill.previousMonthDues != 0.0) {
+        if (bill.previousMonthDues > 0) {
+            builder.append("Previous Dues: ${currencyFormat.format(bill.previousMonthDues)}\n")
+        } else {
+            builder.append("Previous Credit: ${currencyFormat.format(abs(bill.previousMonthDues))}\n")
+        }
     }
     builder.append("Total Amount: ${currencyFormat.format(bill.totalAmountDue)}\n")
     builder.append("Amount Paid: ${currencyFormat.format(bill.amountPaid)}\n")
-    val status = if (bill.isFullyPaid) "Fully Paid on ${formatDate(bill.paymentDate)}"
-                 else "Due: ${currencyFormat.format(max(0.0, bill.totalAmountDue - bill.amountPaid))}"
-    builder.append("Status: $status\n")
+
+    val balance = bill.amountPaid - bill.totalAmountDue
+    var statusText: String 
+    if (bill.isFullyPaid) {
+        statusText = "Fully Paid on ${formatDate(bill.paymentDate)}"
+        if (balance > 0.001) { // Tolerance for double comparison
+            statusText += " (Advance: ${currencyFormat.format(balance)})"
+        }
+    } else {
+        if (balance > 0.001) {
+            statusText = "Advance: ${currencyFormat.format(balance)}"
+        } else if (abs(balance) < 0.001) { // Effectively zero balance
+            statusText = "Cleared (Pending Confirmation)"
+        } else { // balance < 0
+            statusText = "Due: ${currencyFormat.format(abs(balance))}"
+        }
+    }
+    builder.append("Status: $statusText\n")
     return builder.toString()
 }
 
@@ -321,8 +365,8 @@ fun BillHistoryItem(
     val billPeriod = remember(bill.year, bill.month) {
         monthYearFormat.format(Calendar.getInstance().apply { set(bill.year, bill.month - 1, 1) }.time)
     }
-    val remainingDue = remember(bill.totalAmountDue, bill.amountPaid) {
-        max(0.0, bill.totalAmountDue - bill.amountPaid)
+    val balance = remember(bill.totalAmountDue, bill.amountPaid) {
+        bill.amountPaid - bill.totalAmountDue
     }
 
     Card(
@@ -364,26 +408,72 @@ fun BillHistoryItem(
                 val description = bill.otherChargesDescription?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
                 Text("Other Charges: ${currencyFormat.format(bill.otherCharges)}$description")
             }
-            if (bill.previousMonthDues > 0) {
-                Text("Previous Dues Carried Over: ${currencyFormat.format(bill.previousMonthDues)}", color = MaterialTheme.colorScheme.error)
+            
+            // Display Previous Dues or Credit
+            if (bill.previousMonthDues != 0.0) { // Only display if there's a non-zero due or credit
+                if (bill.previousMonthDues > 0) {
+                    Text(
+                        "Previous Dues Carried Over: ${currencyFormat.format(bill.previousMonthDues)}", 
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else { // previousMonthDues < 0, it's a credit
+                    Text(
+                        "Previous Credit: ${currencyFormat.format(abs(bill.previousMonthDues))}", 
+                        color = PositiveGreenColor
+                    )
+                }
             }
+
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             Text("Total Bill Amount: ${currencyFormat.format(bill.totalAmountDue)}", fontWeight = FontWeight.Bold)
             Text("Amount Paid: ${currencyFormat.format(bill.amountPaid)}")
 
             Spacer(modifier = Modifier.height(4.dp))
+
             if (bill.isFullyPaid) {
-                Text("Status: Fully Paid", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Status: Fully Paid", 
+                    color = PositiveGreenColor,
+                    style = MaterialTheme.typography.bodyMedium, 
+                    fontWeight = FontWeight.Bold
+                )
+                if (balance > 0.001) { // Tolerance for double comparison
+                    Text(
+                        text = "Advance: ${currencyFormat.format(balance)}", 
+                        color = PositiveGreenColor, 
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
                 Text("Paid on: ${formatDate(bill.paymentDate)}", style = MaterialTheme.typography.bodySmall)
             } else {
-                if (remainingDue > 0) {
-                    Text("Status: ${currencyFormat.format(remainingDue)} Due", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                } else { // This case implies amountPaid might be equal to totalDue but isFullyPaid is false.
-                    Text("Status: Partially Paid", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                when {
+                    balance > 0.001 -> { // Tolerance for double comparison
+                        Text(
+                            text = "Status: ${currencyFormat.format(balance)} Advance", 
+                            color = PositiveGreenColor, 
+                            style = MaterialTheme.typography.bodyMedium, 
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    abs(balance) < 0.001 -> { // Effectively zero balance
+                        Text(
+                            text = "Status: Cleared (Pending Confirmation)", 
+                            style = MaterialTheme.typography.bodyMedium, 
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    else -> { // balance < 0 (Dues)
+                        Text(
+                            text = "Status: ${currencyFormat.format(abs(balance))} Due", 
+                            color = MaterialTheme.colorScheme.error, 
+                            style = MaterialTheme.typography.bodyMedium, 
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
-                if(bill.paymentDate != null && bill.paymentDate != 0L) { // Check if there's any payment date, even for partial
+                if(bill.paymentDate != null && bill.paymentDate != 0L && bill.amountPaid > 0) { 
                     Text("Last Payment: ${formatDate(bill.paymentDate)}", style = MaterialTheme.typography.bodySmall)
-                } else if (bill.amountPaid > 0) { // If some amount is paid but no date (should ideally not happen)
+                } else if (bill.amountPaid > 0) { 
                      Text("Last Payment: Date N/A", style = MaterialTheme.typography.bodySmall)
                 }
             }

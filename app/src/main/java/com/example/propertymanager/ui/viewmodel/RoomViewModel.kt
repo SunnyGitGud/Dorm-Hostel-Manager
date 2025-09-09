@@ -51,7 +51,7 @@ class RoomViewModel(
 
     fun updateRoomDetails(room: RoomEntity) {
         viewModelScope.launch {
-            roomRepository.update(room) // Changed to use safer update method
+            roomRepository.update(room) 
         }
     }
 
@@ -103,8 +103,10 @@ class RoomViewModel(
         val previousMonthBillEntity = monthlyBillRepository.getBillForRoomMonthYearSuspend(roomId, prevBillEffectiveYear, prevBillEffectiveMonth)
 
         if (tenantCurrentMonth != null && tenantPreviousMonth != null && tenantCurrentMonth.id == tenantPreviousMonth.id) {
-            if (previousMonthBillEntity != null && !previousMonthBillEntity.isFullyPaid) {
-                calculatedPreviousMonthDues = max(0.0, previousMonthBillEntity.totalAmountDue - previousMonthBillEntity.amountPaid)
+            if (previousMonthBillEntity != null) {
+                // If amountPaid > totalAmountDue, this will be negative (a credit)
+                // If totalAmountDue > amountPaid, this will be positive (a due)
+                calculatedPreviousMonthDues = previousMonthBillEntity.totalAmountDue - previousMonthBillEntity.amountPaid
             }
         }
 

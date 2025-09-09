@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -38,20 +39,23 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.max
+
+// Removed local PositiveGreenColor definition, will use the one from BillHistoryComponents.kt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddEditBillDialog(
     bill: MonthlyBillEntity,
     roomName: String,
-    currentRoomInitialMeterReading: Double?, // New parameter
-    currentRoomElectricityRate: Double,    // New parameter
+    currentRoomInitialMeterReading: Double?,
+    currentRoomElectricityRate: Double,
     onDismiss: () -> Unit,
     onBillUpdated: (MonthlyBillEntity) -> Unit,
     onSave: (MonthlyBillEntity) -> Unit
 ) {
-    val currentBillState = remember(bill) { mutableStateOf(bill.copy()) } // Work on a copy
+    val currentBillState = remember(bill) { mutableStateOf(bill.copy()) }
 
     val isRoomOccupied = currentBillState.value.tenantNameAtBillingTime != "Not Occupied" && currentBillState.value.rentAtBillingTime >= 0.0
     val isMeterReadingEditable = isRoomOccupied && !currentBillState.value.isInitialReadingRolledOver
@@ -80,11 +84,11 @@ fun AddEditBillDialog(
     }
 
     LaunchedEffect(
-        monthEndMeterReadingString, 
-        waterBillString, 
-        otherChargesString, 
-        otherChargesDescription, 
-        isRoomOccupied, 
+        monthEndMeterReadingString,
+        waterBillString,
+        otherChargesString,
+        otherChargesDescription,
+        isRoomOccupied,
         currentBillState.value.isInitialReadingRolledOver,
         currentRoomInitialMeterReading,
         currentRoomElectricityRate
@@ -94,7 +98,6 @@ fun AddEditBillDialog(
         val newOther = if (isRoomOccupied) otherChargesString.toDoubleOrNull() ?: 0.0 else 0.0
         val newDesc = if (isRoomOccupied) otherChargesDescription.ifBlank { null } else null
 
-        // --- Logic for billForDisplay (updates currentBillState.value for immediate UI feedback) ---
         val billForDisplay = currentBillState.value.copy(
             monthEndMeterReading = newMonthEndReadingDouble,
             waterBill = newWater,
@@ -106,33 +109,32 @@ fun AddEditBillDialog(
             if (currentRoomInitialMeterReading != null && newMonthEndReadingDouble != null && newMonthEndReadingDouble >= currentRoomInitialMeterReading) {
                 billForDisplay.electricityUnits = newMonthEndReadingDouble - currentRoomInitialMeterReading
             } else {
-                billForDisplay.electricityUnits = 0.0 // Default if readings are invalid for calculation
+                billForDisplay.electricityUnits = 0.0
             }
             billForDisplay.electricityRateAtBillingTime = currentRoomElectricityRate
-        } else if (isRoomOccupied) { // Field is disabled (isInitialReadingRolledOver is true)
-            // Preserve existing units and rate for display (already in billForDisplay from currentBillState.value.copy)
+        } else if (isRoomOccupied) {
+            // Preserve existing units and rate for display
         } else { // Not occupied
              billForDisplay.electricityUnits = 0.0
              billForDisplay.electricityRateAtBillingTime = currentRoomElectricityRate
         }
-        
-        billForDisplay.calculateTotalDue() // This updates billForDisplay.electricityBill for UI
-        currentBillState.value = billForDisplay // Update UI with display calculations
 
-        // --- Logic for finalBillForViewModel (passed to onBillUpdated callback) ---
-        val finalBillForViewModel = currentBillState.value.copy( // Start with the fully updated UI state
+        billForDisplay.calculateTotalDue()
+        currentBillState.value = billForDisplay
+
+        val finalBillForViewModel = currentBillState.value.copy(
             electricityUnits = if (isMeterReadingEditable) {
-                                 null // Signal ViewModel to recalculate authoritatively
+                                 null
                              } else {
-                                 currentBillState.value.electricityUnits // Preserve if locked
+                                 currentBillState.value.electricityUnits
                              },
             electricityRateAtBillingTime = if (isMeterReadingEditable) {
-                                              currentRoomElectricityRate // Provide current rate for ViewModel
+                                              currentRoomElectricityRate
                                           } else {
-                                              currentBillState.value.electricityRateAtBillingTime // Preserve if locked
+                                              currentBillState.value.electricityRateAtBillingTime
                                           }
         )
-        onBillUpdated(finalBillForViewModel) 
+        onBillUpdated(finalBillForViewModel)
     }
 
     AlertDialog(
@@ -148,24 +150,34 @@ fun AddEditBillDialog(
                 )
                 Text("Base Rent: ${currencyFormat.format(currentBillState.value.rentAtBillingTime)}", style = MaterialTheme.typography.bodyLarge)
 
-                if (currentBillState.value.previousMonthDues > 0) {
+                // Display Previous Dues or Credit
+                val previousDuesOrCredit = currentBillState.value.previousMonthDues
+                if (previousDuesOrCredit != 0.0) { // Only display if there's a non-zero due or credit
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        "Previous Dues: ${currencyFormat.format(currentBillState.value.previousMonthDues)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    if (previousDuesOrCredit > 0) {
+                        Text(
+                            "Previous Dues: ${currencyFormat.format(previousDuesOrCredit)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else { // previousDuesOrCredit < 0, it's a credit
+                        Text(
+                            "Previous Credit: ${currencyFormat.format(abs(previousDuesOrCredit))}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PositiveGreenColor // Use the green color for credit
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(
                     value = monthEndMeterReadingString,
                     onValueChange = { if(isRoomOccupied) monthEndMeterReadingString = it },
-                    label = { Text("Month End Meter Reading") }, 
+                    label = { Text("Month End Meter Reading") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = isMeterReadingEditable 
+                    enabled = isMeterReadingEditable
                 )
 
                 if (isRoomOccupied && currentBillState.value.electricityUnits != null) {
@@ -175,7 +187,6 @@ fun AddEditBillDialog(
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
-                // Show calculated electricity bill amount if units are not null and greater than zero, or if bill amount is positive
                 if (isRoomOccupied && (currentBillState.value.electricityUnits != null && currentBillState.value.electricityUnits!! > 0.009 || currentBillState.value.electricityBill > 0.009)) {
                      Spacer(modifier = Modifier.height(4.dp))
                      Text(
@@ -183,7 +194,7 @@ fun AddEditBillDialog(
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp)) // Increased spacing before Water Bill
+                Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(value = waterBillString, onValueChange = { if(isRoomOccupied) waterBillString = it }, label = { Text("Water Bill") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next), singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = isRoomOccupied)
                 OutlinedTextField(value = otherChargesString, onValueChange = { if(isRoomOccupied) otherChargesString = it }, label = { Text("Other Charges") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next), singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = isRoomOccupied)
@@ -196,13 +207,34 @@ fun AddEditBillDialog(
 
                 Text("Payment Status:", style = MaterialTheme.typography.titleSmall)
                 Text("Amount Paid: ${currencyFormat.format(currentBillState.value.amountPaid)}", style = MaterialTheme.typography.bodyMedium)
-                
-                val remainingDue = max(0.0, currentBillState.value.totalAmountDue - currentBillState.value.amountPaid)
+
+                val balance = currentBillState.value.amountPaid - currentBillState.value.totalAmountDue
 
                 if (currentBillState.value.isFullyPaid) {
-                    Text("Status: Fully Paid on ${formatDate(currentBillState.value.paymentDate)}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = "Status: Fully Paid on ${formatDate(currentBillState.value.paymentDate)}",
+                        color = PositiveGreenColor, // Using the green color for consistency
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (balance > 0.001) { // Show advance if there's a significant positive balance
+                        Text(
+                            text = "Advance: ${currencyFormat.format(balance)}",
+                            color = PositiveGreenColor,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 } else {
-                    Text("Status: ${currencyFormat.format(remainingDue)} remaining", style = MaterialTheme.typography.bodyMedium)
+                    // If not fully paid, show options to make a payment
+                    val remainingDueForPayment = max(0.0, currentBillState.value.totalAmountDue - currentBillState.value.amountPaid)
+                    if (balance < -0.001) { // If there are dues
+                         Text("Status: ${currencyFormat.format(remainingDueForPayment)} remaining", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    } else if (balance >= 0 && balance < 0.001 && currentBillState.value.amountPaid > 0) { // Paid exactly or very close, but not marked fully paid
+                        Text("Status: Cleared (Pending Confirmation)", style = MaterialTheme.typography.bodyMedium)
+                    } else { // Covers balance > 0 (advance) or amountPaid = 0 for a non-zero bill
+                         Text("Status: ${currencyFormat.format(remainingDueForPayment)} remaining", style = MaterialTheme.typography.bodyMedium)
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = paymentAmountToRecord,
@@ -213,7 +245,7 @@ fun AddEditBillDialog(
                         isError = paymentError != null,
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = remainingDue > 0 && isRoomOccupied
+                        enabled = isRoomOccupied // Allow payment input even if remainingDue is 0, to record advance
                     )
                     if (paymentError != null) { Text(paymentError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 
@@ -221,26 +253,26 @@ fun AddEditBillDialog(
                         onClick = {
                             val paymentValue = paymentAmountToRecord.toDoubleOrNull()
                             if (paymentValue == null || paymentValue <= 0) {
-                                paymentError = "Enter a valid amount"
-                            } else if (paymentValue > remainingDue + 0.001) { // Add small tolerance for double comparison
-                                paymentError = "Cannot pay more than remaining due (${currencyFormat.format(remainingDue)})"
+                                paymentError = "Enter a valid positive amount"
                             } else {
                                 val newAmountPaid = currentBillState.value.amountPaid + paymentValue
-                                val isNowFullyPaid = newAmountPaid >= currentBillState.value.totalAmountDue - 0.001 // Tolerance
-                                
+                                // Bill is fully paid if new amount paid is >= total due (with tolerance)
+                                val isNowFullyPaid = newAmountPaid >= currentBillState.value.totalAmountDue - 0.001
+
                                 val billWithPayment = currentBillState.value.copy(
                                     amountPaid = newAmountPaid,
                                     isFullyPaid = isNowFullyPaid,
-                                    paymentDate = if (isNowFullyPaid) System.currentTimeMillis() else currentBillState.value.paymentDate
+                                    // Update paymentDate if it's newly fully paid or if it's already fully paid and another payment is made
+                                    paymentDate = if (isNowFullyPaid || currentBillState.value.isFullyPaid) System.currentTimeMillis() else currentBillState.value.paymentDate
                                 )
-                                billWithPayment.calculateTotalDue() 
+                                billWithPayment.calculateTotalDue()
                                 currentBillState.value = billWithPayment
-                                // Pass the updated bill (with payment) to onBillUpdated for ViewModel consistency
+
                                 val finalBillForViewModel = currentBillState.value.copy(
                                     electricityUnits = if (isMeterReadingEditable) null else currentBillState.value.electricityUnits,
                                     electricityRateAtBillingTime = if (isMeterReadingEditable) currentRoomElectricityRate else currentBillState.value.electricityRateAtBillingTime
                                 )
-                                onBillUpdated(finalBillForViewModel) 
+                                onBillUpdated(finalBillForViewModel)
 
                                 paymentAmountToRecord = ""
                                 paymentError = null
@@ -248,7 +280,7 @@ fun AddEditBillDialog(
                             }
                         },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        enabled = remainingDue > 0 && isRoomOccupied
+                        enabled = isRoomOccupied // Allow payment button if room is occupied
                     ) {
                         Icon(Icons.Filled.Payment, contentDescription = "Record Payment", modifier = Modifier.padding(end = 4.dp))
                         Text("Record This Payment")
