@@ -33,7 +33,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.propertymanager.data.entities.MonthlyBillEntity
-import com.example.propertymanager.utils.formatDate // Corrected import
+import com.example.propertymanager.utils.formatDate
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -45,6 +45,8 @@ import kotlin.math.max
 fun AddEditBillDialog(
     bill: MonthlyBillEntity,
     roomName: String,
+    currentRoomInitialMeterReading: Double?, // New parameter
+    currentRoomElectricityRate: Double,    // New parameter
     onDismiss: () -> Unit,
     onBillUpdated: (MonthlyBillEntity) -> Unit,
     onSave: (MonthlyBillEntity) -> Unit
@@ -52,8 +54,8 @@ fun AddEditBillDialog(
     val currentBillState = remember(bill) { mutableStateOf(bill.copy()) } // Work on a copy
 
     val isRoomOccupied = currentBillState.value.tenantNameAtBillingTime != "Not Occupied" && currentBillState.value.rentAtBillingTime >= 0.0
+    val isMeterReadingEditable = isRoomOccupied && !currentBillState.value.isInitialReadingRolledOver
 
-    // Renamed and repurposed for month end meter reading
     var monthEndMeterReadingString by remember(currentBillState.value.id, currentBillState.value.monthEndMeterReading, isRoomOccupied) {
         mutableStateOf(if (isRoomOccupied) currentBillState.value.monthEndMeterReading?.toString() ?: "" else "")
     }
@@ -77,26 +79,60 @@ fun AddEditBillDialog(
         monthYearFormat.format(Calendar.getInstance().apply { set(currentBillState.value.year, currentBillState.value.month - 1, 1) }.time)
     }
 
-    LaunchedEffect(monthEndMeterReadingString, waterBillString, otherChargesString, otherChargesDescription, isRoomOccupied) {
-        val monthEndReading = if (isRoomOccupied) monthEndMeterReadingString.toDoubleOrNull() else null
-        val water = if (isRoomOccupied) waterBillString.toDoubleOrNull() ?: 0.0 else 0.0
-        val other = if (isRoomOccupied) otherChargesString.toDoubleOrNull() ?: 0.0 else 0.0
-        val desc = if (isRoomOccupied) otherChargesDescription.ifBlank { null } else null
+    LaunchedEffect(
+        monthEndMeterReadingString, 
+        waterBillString, 
+        otherChargesString, 
+        otherChargesDescription, 
+        isRoomOccupied, 
+        currentBillState.value.isInitialReadingRolledOver,
+        currentRoomInitialMeterReading,
+        currentRoomElectricityRate
+    ) {
+        val newMonthEndReadingDouble = if (isRoomOccupied) monthEndMeterReadingString.toDoubleOrNull() else null
+        val newWater = if (isRoomOccupied) waterBillString.toDoubleOrNull() ?: 0.0 else 0.0
+        val newOther = if (isRoomOccupied) otherChargesString.toDoubleOrNull() ?: 0.0 else 0.0
+        val newDesc = if (isRoomOccupied) otherChargesDescription.ifBlank { null } else null
 
-        var updatedBillCopy = currentBillState.value.copy(
-            monthEndMeterReading = monthEndReading, // Store month end reading
-            electricityUnits = null, // To be calculated by ViewModel based on initial and month end
-            waterBill = water,
-            otherCharges = other,
-            otherChargesDescription = desc
+        // --- Logic for billForDisplay (updates currentBillState.value for immediate UI feedback) ---
+        val billForDisplay = currentBillState.value.copy(
+            monthEndMeterReading = newMonthEndReadingDouble,
+            waterBill = newWater,
+            otherCharges = newOther,
+            otherChargesDescription = newDesc
         )
-        // The actual electricityBill and totalAmountDue will be fully calculated in ViewModel before save
-        // For now, calculateTotalDue might use a zero electricity bill or stale units here.
-        // We call it to update other parts of totalAmountDue like rent, water, other charges.
-        updatedBillCopy.calculateTotalDue() 
+
+        if (isMeterReadingEditable && isRoomOccupied) {
+            if (currentRoomInitialMeterReading != null && newMonthEndReadingDouble != null && newMonthEndReadingDouble >= currentRoomInitialMeterReading) {
+                billForDisplay.electricityUnits = newMonthEndReadingDouble - currentRoomInitialMeterReading
+            } else {
+                billForDisplay.electricityUnits = 0.0 // Default if readings are invalid for calculation
+            }
+            billForDisplay.electricityRateAtBillingTime = currentRoomElectricityRate
+        } else if (isRoomOccupied) { // Field is disabled (isInitialReadingRolledOver is true)
+            // Preserve existing units and rate for display (already in billForDisplay from currentBillState.value.copy)
+        } else { // Not occupied
+             billForDisplay.electricityUnits = 0.0
+             billForDisplay.electricityRateAtBillingTime = currentRoomElectricityRate
+        }
         
-        currentBillState.value = updatedBillCopy
-        onBillUpdated(updatedBillCopy)
+        billForDisplay.calculateTotalDue() // This updates billForDisplay.electricityBill for UI
+        currentBillState.value = billForDisplay // Update UI with display calculations
+
+        // --- Logic for finalBillForViewModel (passed to onBillUpdated callback) ---
+        val finalBillForViewModel = currentBillState.value.copy( // Start with the fully updated UI state
+            electricityUnits = if (isMeterReadingEditable) {
+                                 null // Signal ViewModel to recalculate authoritatively
+                             } else {
+                                 currentBillState.value.electricityUnits // Preserve if locked
+                             },
+            electricityRateAtBillingTime = if (isMeterReadingEditable) {
+                                              currentRoomElectricityRate // Provide current rate for ViewModel
+                                          } else {
+                                              currentBillState.value.electricityRateAtBillingTime // Preserve if locked
+                                          }
+        )
+        onBillUpdated(finalBillForViewModel) 
     }
 
     AlertDialog(
@@ -125,14 +161,29 @@ fun AddEditBillDialog(
                 OutlinedTextField(
                     value = monthEndMeterReadingString,
                     onValueChange = { if(isRoomOccupied) monthEndMeterReadingString = it },
-                    label = { Text("Month End Meter Reading") }, // Changed label
+                    label = { Text("Month End Meter Reading") }, 
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = isRoomOccupied
+                    enabled = isMeterReadingEditable 
                 )
-                // Removed electricity cost breakdown preview
-                Spacer(modifier = Modifier.height(4.dp))
+
+                if (isRoomOccupied && currentBillState.value.electricityUnits != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Units Consumed: ${String.format(Locale.getDefault(), "%.2f", currentBillState.value.electricityUnits)}",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                // Show calculated electricity bill amount if units are not null and greater than zero, or if bill amount is positive
+                if (isRoomOccupied && (currentBillState.value.electricityUnits != null && currentBillState.value.electricityUnits!! > 0.009 || currentBillState.value.electricityBill > 0.009)) {
+                     Spacer(modifier = Modifier.height(4.dp))
+                     Text(
+                        "Electricity Bill: ${currencyFormat.format(currentBillState.value.electricityBill)}",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp)) // Increased spacing before Water Bill
 
                 OutlinedTextField(value = waterBillString, onValueChange = { if(isRoomOccupied) waterBillString = it }, label = { Text("Water Bill") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next), singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = isRoomOccupied)
                 OutlinedTextField(value = otherChargesString, onValueChange = { if(isRoomOccupied) otherChargesString = it }, label = { Text("Other Charges") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next), singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = isRoomOccupied)
@@ -182,9 +233,15 @@ fun AddEditBillDialog(
                                     isFullyPaid = isNowFullyPaid,
                                     paymentDate = if (isNowFullyPaid) System.currentTimeMillis() else currentBillState.value.paymentDate
                                 )
-                                billWithPayment.calculateTotalDue() // Recalculate just in case
+                                billWithPayment.calculateTotalDue() 
                                 currentBillState.value = billWithPayment
-                                onBillUpdated(billWithPayment) // Update parent state
+                                // Pass the updated bill (with payment) to onBillUpdated for ViewModel consistency
+                                val finalBillForViewModel = currentBillState.value.copy(
+                                    electricityUnits = if (isMeterReadingEditable) null else currentBillState.value.electricityUnits,
+                                    electricityRateAtBillingTime = if (isMeterReadingEditable) currentRoomElectricityRate else currentBillState.value.electricityRateAtBillingTime
+                                )
+                                onBillUpdated(finalBillForViewModel) 
+
                                 paymentAmountToRecord = ""
                                 paymentError = null
                                 keyboardController?.hide()

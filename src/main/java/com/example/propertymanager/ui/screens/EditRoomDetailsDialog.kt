@@ -4,7 +4,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -19,28 +22,34 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.propertymanager.data.entities.RoomEntity
+import com.example.propertymanager.utils.formatDate
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditRoomDetailsDialog(
     room: RoomEntity,
+    currentMonthEndReadingForDisplay: Double?, // New parameter
     onDismiss: () -> Unit,
     onSave: (updatedRoom: RoomEntity) -> Unit
 ) {
     var name by remember(room.name) { mutableStateOf(room.name) }
     var rentString by remember(room.rent) { mutableStateOf(room.rent.toString()) }
     var electricityRateString by remember(room.electricityRatePerUnit) { mutableStateOf(room.electricityRatePerUnit.toString()) }
+    var initialMeterReadingString by remember(room.initialMeterReading) { mutableStateOf(room.initialMeterReading?.toString() ?: "") }
 
     var nameError by remember { mutableStateOf<String?>(null) }
     var rentError by remember { mutableStateOf<String?>(null) }
     var electricityRateError by remember { mutableStateOf<String?>(null) }
+    var initialMeterReadingError by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit Room Details") },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; nameError = null },
@@ -78,6 +87,42 @@ fun EditRoomDetailsDialog(
                 if (electricityRateError != null) {
                     Text(electricityRateError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
+                Spacer(modifier = Modifier.height(16.dp)) // Added more space
+
+                // --- Initial Meter Reading Section ---
+                Text("Meter Readings", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp))
+                OutlinedTextField(
+                    value = initialMeterReadingString,
+                    onValueChange = { initialMeterReadingString = it; initialMeterReadingError = null },
+                    label = { Text("Initial Meter Reading (Editable)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = initialMeterReadingError != null,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (initialMeterReadingError != null) {
+                    Text(initialMeterReadingError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                room.initialMeterReadingDate?.let {
+                    Text(
+                        "Initial Reading Set On: ${formatDate(it)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                currentMonthEndReadingForDisplay?.let {
+                    Text(
+                        "This Month's End Reading: ${String.format(Locale.getDefault(), "%.2f", it)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                } ?: Text(
+                    "This Month's End Reading: Not yet recorded",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                // --- End of Meter Reading Section ---
             }
         },
         confirmButton = {
@@ -107,11 +152,30 @@ fun EditRoomDetailsDialog(
                         valid = false
                     }
 
+                    val initialMeterReadingDouble = initialMeterReadingString.toDoubleOrNull()
+                    var newInitialMeterReading: Double? = null
+                    var newInitialMeterReadingDate: Long? = null
+
+                    if (initialMeterReadingString.isNotBlank()) {
+                        if (initialMeterReadingDouble == null || initialMeterReadingDouble < 0) {
+                            initialMeterReadingError = "Enter a valid non-negative reading or leave blank"
+                            valid = false
+                        } else {
+                            newInitialMeterReading = initialMeterReadingDouble
+                            newInitialMeterReadingDate = System.currentTimeMillis() // Update date if reading is set
+                        }
+                    } else { // Field is blank, so clear the reading and its date
+                        newInitialMeterReading = null
+                        newInitialMeterReadingDate = null
+                    }
+
                     if (valid) {
                         val updatedRoom = room.copy(
                             name = name,
                             rent = rentDouble!!,
-                            electricityRatePerUnit = electricityRateDouble!!
+                            electricityRatePerUnit = electricityRateDouble!!,
+                            initialMeterReading = newInitialMeterReading,
+                            initialMeterReadingDate = newInitialMeterReadingDate
                         )
                         onSave(updatedRoom)
                     }

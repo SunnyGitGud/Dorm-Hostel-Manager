@@ -47,7 +47,7 @@ data class MonthlyBillEntity(
     var dueDate: Long = 0L, // Timestamp
     var paymentDate: Long? = null, // Timestamp, null if not fully paid
     var isFullyPaid: Boolean = false,
-    var isInitialReadingRolledOver: Boolean = false // New flag to track rollover
+    var isInitialReadingRolledOver: Boolean = false // Ensures this field is present
 ) {
     fun calculateTotalDue() {
         // electricityUnits and electricityRateAtBillingTime should be set by the ViewModel before this is called.
