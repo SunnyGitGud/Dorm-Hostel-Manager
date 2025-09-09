@@ -31,7 +31,7 @@ A simple Android application to help manage dorm rooms, tenants, and their bills
 
 1.  Clone the repository:
     ```bash
-    git clone [Your GitHub Repository URL Here]
+    git clone https://github.com/SunnyGitGud/Dorm-Hostel-Manager
     ```
 2.  Open the project in Android Studio (latest stable version recommended).
 3.  Let Android Studio download the necessary Gradle dependencies.
@@ -53,4 +53,4 @@ Please make sure to update tests as appropriate.
 
 ## License
 
-[MIT] <!-- Or choose another license if you prefer -->
+[MIT] 
