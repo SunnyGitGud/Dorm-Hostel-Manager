@@ -64,21 +64,24 @@ class RoomViewModel(
             val currentMonth = calendar.get(Calendar.MONTH) + 1
 
             for (roomWithTenant in rooms) {
-                val room = roomWithTenant.room
-                val bill = getOrCreateBillForRoom(room.id, currentYear, currentMonth, room.rent)
+                // Only process non-hidden rooms for summaries if needed, but getRoomsForProperty already filters
+                // if (!roomWithTenant.room.isHidden) { 
+                    val room = roomWithTenant.room
+                    val bill = getOrCreateBillForRoom(room.id, currentYear, currentMonth, room.rent)
 
-                val balance = bill.totalAmountDue - bill.amountPaid
-                val isGenerated = bill.id != 0
-                val isDue = isGenerated && balance > 0.001 
-                val isAdvance = isGenerated && balance < -0.001
+                    val balance = bill.totalAmountDue - bill.amountPaid
+                    val isGenerated = bill.id != 0
+                    val isDue = isGenerated && balance > 0.001 
+                    val isAdvance = isGenerated && balance < -0.001
 
-                summaries[room.id] = BillStatusSummary(
-                    amount = balance,
-                    isDue = isDue,
-                    isAdvance = isAdvance,
-                    isGenerated = isGenerated,
-                    displayAmount = kotlin.math.abs(balance)
-                )
+                    summaries[room.id] = BillStatusSummary(
+                        amount = balance,
+                        isDue = isDue,
+                        isAdvance = isAdvance,
+                        isGenerated = isGenerated,
+                        displayAmount = kotlin.math.abs(balance)
+                    )
+                // }
             }
             _roomBillSummaries.value = summaries
         }
@@ -87,7 +90,7 @@ class RoomViewModel(
     fun loadCurrentCalendarMonthBill(roomId: Int) {
         viewModelScope.launch {
             val roomEntity = roomRepository.getRoomById(roomId) 
-            if (roomEntity != null) {
+            if (roomEntity != null && !roomEntity.isHidden) { // Check if room is not hidden
                 val calendar = Calendar.getInstance()
                 val year = calendar.get(Calendar.YEAR)
                 val month = calendar.get(Calendar.MONTH) + 1
@@ -112,7 +115,8 @@ class RoomViewModel(
                 rent = rent,
                 electricityRatePerUnit = electricityRatePerUnit,
                 initialMeterReading = initialMeterReading,
-                initialMeterReadingDate = if (initialMeterReading != null) System.currentTimeMillis() else null
+                initialMeterReadingDate = if (initialMeterReading != null) System.currentTimeMillis() else null,
+                isHidden = false // Ensure new rooms are not hidden
             )
             roomRepository.insert(room)
             // roomsWithTenants will auto-update and trigger updateRoomBillSummaries via collect
@@ -121,8 +125,8 @@ class RoomViewModel(
 
     fun updateRoomDetails(room: RoomEntity) {
         viewModelScope.launch {
-            roomRepository.update(room)
-            updateRoomBillSummaries(_roomsWithTenants.value) // Manually trigger for existing rooms
+            roomRepository.update(room) // isHidden status is part of RoomEntity
+            updateRoomBillSummaries(_roomsWithTenants.value) 
         }
     }
 
@@ -147,7 +151,7 @@ class RoomViewModel(
 
                 if (existingBillForMoveInMonth == null) {
                     val roomEntity = roomRepository.getRoomById(roomId)
-                    if (roomEntity != null) {
+                    if (roomEntity != null && !roomEntity.isHidden) { // Check if room is not hidden
                         var rentForMoveInMonth = roomEntity.rent
                         val moveInDay = moveInCalendar.get(Calendar.DAY_OF_MONTH)
                         if (moveInDay > 1) {
@@ -170,10 +174,10 @@ class RoomViewModel(
                             isInitialReadingRolledOver = false
                         )
                         initialMoveInBill.installments = emptyList()
-                        saveBill(initialMoveInBill) // saveBill will trigger updateRoomBillSummaries
+                        saveBill(initialMoveInBill) 
                     }
                 } else {
-                    updateRoomBillSummaries(_roomsWithTenants.value) // Tenant details might affect existing bill display name
+                    updateRoomBillSummaries(_roomsWithTenants.value) 
                 }
             } else {
                  updateRoomBillSummaries(_roomsWithTenants.value)
@@ -202,11 +206,15 @@ class RoomViewModel(
         currentRoomFullRent: Double 
     ): MonthlyBillEntity {
         val roomEntity = roomRepository.getRoomById(roomId)
-            ?: return MonthlyBillEntity( 
+        
+        if (roomEntity == null || roomEntity.isHidden) { // Handle case where room is hidden or not found
+             return MonthlyBillEntity( 
                 roomId = roomId, year = billYear, month = billMonth,
-                tenantNameAtBillingTime = "Error: Room not found", rentAtBillingTime = 0.0, isFullyPaid = true,
+                tenantNameAtBillingTime = if (roomEntity == null) "Error: Room not found" else "Room Hidden", 
+                rentAtBillingTime = 0.0, isFullyPaid = true,
                 isFullRentAppliedOverride = false 
             ).apply { installments = emptyList() } 
+        }
 
         val startOfRequestedMonth = Calendar.getInstance().apply { set(billYear, billMonth - 1, 1, 0, 0, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
         val endOfRequestedMonth = Calendar.getInstance().apply { set(billYear, billMonth - 1, 1, 23, 59, 59); set(Calendar.MILLISECOND, 999); set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH)) }.timeInMillis
@@ -325,7 +333,13 @@ class RoomViewModel(
         val roomEntity = roomRepository.getRoomById(bill.roomId)
         var performRoomMeterRolloverThisSave = false
 
-        if (roomEntity != null && bill.tenantNameAtBillingTime != "Not Occupied") {
+        // Additional check: do not process bill saving for a hidden room
+        if (roomEntity == null || roomEntity.isHidden) { 
+            updateRoomBillSummaries(_roomsWithTenants.value) // Refresh summaries to reflect no bill
+            return 0L // Indicate no bill was saved
+        }
+
+        if (bill.tenantNameAtBillingTime != "Not Occupied") {
             if (bill.electricityUnits == null || !bill.isInitialReadingRolledOver) {
                 bill.electricityRateAtBillingTime = roomEntity.electricityRatePerUnit
                 if (roomEntity.initialMeterReading != null && bill.monthEndMeterReading != null &&
@@ -342,7 +356,7 @@ class RoomViewModel(
         } else { 
             bill.electricityUnits = 0.0
             bill.monthEndMeterReading = null
-            bill.electricityRateAtBillingTime = bill.electricityRateAtBillingTime ?: roomEntity?.electricityRatePerUnit ?: 0.0
+            bill.electricityRateAtBillingTime = bill.electricityRateAtBillingTime ?: roomEntity.electricityRatePerUnit
         }
         
         val billToSave = if (performRoomMeterRolloverThisSave) bill.copy(isInitialReadingRolledOver = true) else bill.copy()
@@ -361,7 +375,7 @@ class RoomViewModel(
             }
             
             loadCurrentCalendarMonthBill(bill.roomId) 
-            updateRoomBillSummaries(_roomsWithTenants.value) // Update summaries after save
+            updateRoomBillSummaries(_roomsWithTenants.value) 
         }
 
         if (savedBillId > 0 && performRoomMeterRolloverThisSave && billToSave.monthEndMeterReading != null) {
@@ -375,6 +389,9 @@ class RoomViewModel(
     }
 
     suspend fun getAllBillsForRoom(roomId: Int): List<MonthlyBillEntity> {
+        val roomEntity = roomRepository.getRoomById(roomId)
+        if (roomEntity == null || roomEntity.isHidden) return emptyList() // Don't return bills for hidden rooms
+
         val bills = monthlyBillRepository.getBillsForRoomSuspend(roomId)
         return bills.map { bill ->
             if (bill.id != 0) {
@@ -392,18 +409,42 @@ class RoomViewModel(
     }
 
     fun getAllTenantsForRoomFlow(roomId: Int): Flow<List<TenantEntity>> {
+        // This might need adjustment if we don't want to show tenants from hidden rooms.
+        // For now, it will show all tenants regardless of room's isHidden status.
         return tenantRepository.getAllTenantsForRoom(roomId)
     }
 
     fun getBillByIdFlow(billId: Int): Flow<MonthlyBillEntity?> {
+        // This might need adjustment if we don't want to show bills from hidden rooms.
         return monthlyBillRepository.getBillById(billId).map { bill ->
             bill?.let {
+                val roomEntity = roomRepository.getRoomById(it.roomId) // Check if room is hidden
+                if (roomEntity == null || roomEntity.isHidden) {
+                    return@map null // Return null if room is hidden or not found
+                }
                 if (it.id != 0 && it.installments.isEmpty()) {
                     val installmentEntities = paymentInstallmentRepository.getInstallmentsForBillSuspend(it.id)
                     it.installments = installmentEntities.map { inst -> PaymentInstallment(amount = inst.amount, date = inst.date) }
                 }
             }
             bill
+        }
+    }
+
+    // Added function to set the hidden status of a room
+    fun setRoomHiddenStatus(roomId: Int, isHidden: Boolean) {
+        viewModelScope.launch {
+            roomRepository.updateRoomHiddenStatus(roomId, isHidden)
+            // The Flow in init {} will automatically update the roomsWithTenants list.
+        }
+    }
+
+    // Added function to delete a room
+    fun deleteRoom(roomWithTenant: RoomWithTenant) {
+        viewModelScope.launch {
+            roomRepository.delete(roomWithTenant.room)
+            // The Flow in init {} will automatically update the roomsWithTenants list,
+            // which will in turn update the bill summaries.
         }
     }
 }

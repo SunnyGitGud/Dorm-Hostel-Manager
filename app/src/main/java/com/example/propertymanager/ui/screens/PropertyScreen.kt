@@ -1,5 +1,6 @@
 package com.example.propertymanager.ui.screens
 
+import androidx.compose.foundation.gestures.detectTapGestures // Added import
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,13 +30,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput // Added import
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.propertymanager.data.entities.PropertyEntity
 import com.example.propertymanager.ui.viewmodel.PropertyViewModel
-import com.example.propertymanager.ui.viewmodel.PropertyFinancialSummary // Added import
-import java.text.NumberFormat // Added import
-import java.util.Locale // Added import
+import com.example.propertymanager.ui.viewmodel.PropertyFinancialSummary
+import java.text.NumberFormat
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,15 +46,19 @@ fun PropertyScreen(
     onPropertyClick: (Int) -> Unit
 ) {
     val properties by viewModel.properties.collectAsState()
-    val propertyFinancialSummaries by viewModel.propertyFinancialSummaries.collectAsState() // Added
-    var showDialog by remember { mutableStateOf(false) }
+    val propertyFinancialSummaries by viewModel.propertyFinancialSummaries.collectAsState()
+    var showAddPropertyDialog by remember { mutableStateOf(false) }
+
+    // State for long-press options dialog
+    var selectedPropertyForOptions by remember { mutableStateOf<PropertyEntity?>(null) }
+    var showPropertyOptionsDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Properties") })
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showDialog = true }) {
+            FloatingActionButton(onClick = { showAddPropertyDialog = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add Property")
             }
         }
@@ -70,20 +76,36 @@ fun PropertyScreen(
                 items(properties, key = { it.id }) { property ->
                     PropertyItem(
                         property = property,
-                        financialSummary = propertyFinancialSummaries[property.id], // Pass summary
-                        onClick = { onPropertyClick(property.id) }
+                        financialSummary = propertyFinancialSummaries[property.id],
+                        onClick = { onPropertyClick(property.id) },
+                        onLongClick = { // Added onLongClick
+                            selectedPropertyForOptions = property
+                            showPropertyOptionsDialog = true
+                        }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         }
 
-        if (showDialog) {
+        if (showAddPropertyDialog) {
             AddPropertyDialog(
-                onDismiss = { showDialog = false },
+                onDismiss = { showAddPropertyDialog = false },
                 onAddProperty = { name, address ->
                     viewModel.addProperty(name, address)
-                    showDialog = false
+                    showAddPropertyDialog = false
+                }
+            )
+        }
+
+        // Show property options dialog
+        if (showPropertyOptionsDialog && selectedPropertyForOptions != null) {
+            PropertyOptionsDialog(
+                property = selectedPropertyForOptions!!,
+                viewModel = viewModel,
+                onDismiss = {
+                    showPropertyOptionsDialog = false
+                    selectedPropertyForOptions = null
                 }
             )
         }
@@ -95,14 +117,22 @@ fun PropertyScreen(
 fun PropertyItem(
     property: PropertyEntity,
     financialSummary: PropertyFinancialSummary?,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit // Added onLongClick parameter
 ) {
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) { // Added pointerInput for long press
+                detectTapGestures(
+                    onLongPress = { onLongClick() },
+                    onTap = { onClick() } // Ensure regular click still works
+                )
+            },
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        onClick = onClick
+        // onClick = onClick // onClick is now handled by detectTapGestures
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = property.name, style = MaterialTheme.typography.titleMedium)
@@ -110,25 +140,15 @@ fun PropertyItem(
             Text(text = property.address, style = MaterialTheme.typography.bodySmall)
             
             financialSummary?.let {
-                if (it.totalDue > 0.001) { // Epsilon for double comparison
+                if (it.totalDue > 0.001) {
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = "Total Due: ${currencyFormat.format(it.totalDue)}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFB00020) // Red color for due amounts
+                        color = Color(0xFFB00020) 
                     )
                 }
-                // Optionally, display totalAdvance if needed in the future
-                // if (it.totalAdvance > 0.001) {
-                //     Spacer(modifier = Modifier.height(4.dp))
-                //     Text(
-                //         text = "Total Advance: ${currencyFormat.format(it.totalAdvance)}",
-                //         style = MaterialTheme.typography.bodyMedium,
-                //         fontWeight = FontWeight.SemiBold,
-                //         color = Color(0xFF008000) // Green color for advance amounts
-                //     )
-                // }
             }
         }
     }
@@ -157,7 +177,7 @@ fun AddPropertyDialog(
                     isError = nameError != null,
                     singleLine = true
                 )
-                val currentNameError = nameError // Fix for smart cast
+                val currentNameError = nameError
                 if (currentNameError != null) {
                     Text(currentNameError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
@@ -169,7 +189,7 @@ fun AddPropertyDialog(
                     isError = addressError != null,
                     singleLine = true
                 )
-                val currentAddressError = addressError // Fix for smart cast
+                val currentAddressError = addressError
                  if (currentAddressError != null) {
                     Text(currentAddressError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
@@ -200,5 +220,41 @@ fun AddPropertyDialog(
                 Text("Cancel")
             }
         }
+    )
+}
+
+// New composable for property options dialog
+@Composable
+fun PropertyOptionsDialog(
+    property: PropertyEntity,
+    viewModel: PropertyViewModel,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Options for ${property.name}") },
+        text = {
+            Column {
+                TextButton(onClick = {
+                    viewModel.setPropertyHiddenStatus(property.id, true)
+                    onDismiss()
+                }) {
+                    Text("Hide Property")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = {
+                    viewModel.deleteProperty(property)
+                    onDismiss()
+                }) {
+                    Text("Delete Property", color = Color.Red)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        dismissButton = null // No separate dismiss button, Cancel in text acts as one
     )
 }

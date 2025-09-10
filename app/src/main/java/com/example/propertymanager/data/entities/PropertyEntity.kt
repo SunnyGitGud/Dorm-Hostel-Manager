@@ -7,5 +7,6 @@ import androidx.room.PrimaryKey
 data class PropertyEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val name: String,
-    val address: String
+    val address: String,
+    val isHidden: Boolean = false // Added isHidden field
 )

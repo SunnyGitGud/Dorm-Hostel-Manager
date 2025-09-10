@@ -31,4 +31,9 @@ class RoomRepository(private val dao: RoomDao) {
     suspend fun getRoomById(roomId: Int): RoomEntity? {
         return dao.getRoomById(roomId)
     }
+
+    // Added method to update the hidden status of a room
+    suspend fun updateRoomHiddenStatus(roomId: Int, isHidden: Boolean) {
+        dao.updateRoomHiddenStatus(roomId, isHidden)
+    }
 }

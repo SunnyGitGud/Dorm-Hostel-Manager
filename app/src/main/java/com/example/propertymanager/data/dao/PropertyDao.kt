@@ -6,7 +6,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PropertyDao {
-    @Query("SELECT * FROM properties")
+    // Updated to only fetch non-hidden properties by default
+    @Query("SELECT * FROM properties WHERE isHidden = 0") 
     fun getAllProperties(): Flow<List<PropertyEntity>>
 
     @Insert
@@ -14,4 +15,8 @@ interface PropertyDao {
 
     @Delete
     suspend fun delete(property: PropertyEntity)
+
+    // Added method to update the isHidden status of a property
+    @Query("UPDATE properties SET isHidden = :isHidden WHERE id = :propertyId")
+    suspend fun updateHiddenStatus(propertyId: Int, isHidden: Boolean)
 }

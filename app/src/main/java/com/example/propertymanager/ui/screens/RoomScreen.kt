@@ -2,7 +2,8 @@ package com.example.propertymanager.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.clickable // Keep for other usages if any, though Card onClick is replaced
+import androidx.compose.foundation.gestures.detectTapGestures // Added import
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput // Added import
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -54,7 +56,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.propertymanager.data.model.RoomWithTenant
 import com.example.propertymanager.ui.viewmodel.RoomViewModel
-import com.example.propertymanager.ui.viewmodel.BillStatusSummary // Import the data class
+import com.example.propertymanager.ui.viewmodel.BillStatusSummary
 import com.example.propertymanager.utils.formatDate
 import java.text.NumberFormat
 import java.util.Locale
@@ -71,6 +73,10 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
 
     var showConfirmRemoveTenantDialog by remember { mutableStateOf(false) }
     var tenantPendingRemoval by remember { mutableStateOf<RoomWithTenant?>(null) }
+
+    // State for long-press options dialog for rooms
+    var selectedRoomForOptions by remember { mutableStateOf<RoomWithTenant?>(null) }
+    var showRoomOptionsDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Rooms") }) },
@@ -108,6 +114,10 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
                         },
                         onViewDetails = { _, rId ->
                             navController.navigate("room_details/${roomWithTenant.room.propertyId}/$rId")
+                        },
+                        onLongClick = { // Added onLongClick for RoomItem
+                            selectedRoomForOptions = roomWithTenant
+                            showRoomOptionsDialog = true
                         }
                     )
                     Spacer(modifier = Modifier.height(10.dp))
@@ -164,26 +174,46 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
                 }
             )
         }
+
+        // Show room options dialog
+        if (showRoomOptionsDialog && selectedRoomForOptions != null) {
+            RoomOptionsDialog(
+                roomWithTenant = selectedRoomForOptions!!,
+                roomViewModel = roomViewModel,
+                onDismiss = {
+                    showRoomOptionsDialog = false
+                    selectedRoomForOptions = null
+                }
+            )
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class) // Added for Card onClick
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoomItem(
     roomWithTenant: RoomWithTenant,
     billStatusSummary: BillStatusSummary?,
     onAddEditTenant: (RoomWithTenant) -> Unit,
     onRemoveTenant: (RoomWithTenant) -> Unit,
-    onViewDetails: (propertyId: Int, roomId: Int) -> Unit
+    onViewDetails: (propertyId: Int, roomId: Int) -> Unit,
+    onLongClick: () -> Unit // Added onLongClick parameter
 ) {
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) }
     var isExpanded by remember { mutableStateOf(false) }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) { // Added pointerInput for long press and tap
+                detectTapGestures(
+                    onLongPress = { onLongClick() },
+                    onTap = { isExpanded = !isExpanded } // Handle tap for expansion
+                )
+            },
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(8.dp),
-        onClick = { isExpanded = !isExpanded } // Make card clickable
+        shape = RoundedCornerShape(8.dp)
+        // onClick is now handled by detectTapGestures
     ) {
         Box(modifier = Modifier.fillMaxWidth()) { 
             Column(
@@ -197,8 +227,9 @@ fun RoomItem(
                     Text(
                         text = "Room: ${roomWithTenant.room.name}", 
                         style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f) // Allow text to take available space
+                        modifier = Modifier.weight(1f)
                     )
+                    // IconButton for expand/collapse is separate from the long-press on the card
                     IconButton(onClick = { isExpanded = !isExpanded }) {
                         Icon(
                             imageVector = if (isExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
@@ -263,7 +294,6 @@ fun RoomItem(
                 }
             }
 
-            // Bill Status Badge (Due/Advance) - Stays in the Box, aligned TopEnd
             if (billStatusSummary != null && (billStatusSummary.isDue || billStatusSummary.isAdvance)) {
                 val statusText = currencyFormat.format(billStatusSummary.displayAmount)
                 val backgroundColor = if (billStatusSummary.isDue) Color(0xFFB00020) else Color(0xFF00C853)
@@ -272,7 +302,7 @@ fun RoomItem(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 8.dp, end = 8.dp) // Adjusted padding to not overlap icon too much
+                        .padding(top = 8.dp, end = 8.dp) 
                         .clip(RoundedCornerShape(4.dp))
                         .background(backgroundColor)
                         .padding(horizontal = 6.dp, vertical = 3.dp) 
@@ -287,6 +317,42 @@ fun RoomItem(
             }
         }
     }
+}
+
+// New composable for room options dialog
+@Composable
+fun RoomOptionsDialog(
+    roomWithTenant: RoomWithTenant,
+    roomViewModel: RoomViewModel,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Options for Room ${roomWithTenant.room.name}") },
+        text = {
+            Column {
+                TextButton(onClick = {
+                    roomViewModel.setRoomHiddenStatus(roomWithTenant.room.id, true)
+                    onDismiss()
+                }) {
+                    Text("Hide Room")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = {
+                    roomViewModel.deleteRoom(roomWithTenant) // Call the deleteRoom function
+                    onDismiss()
+                }) {
+                    Text("Delete Room", color = Color.Red)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        dismissButton = null
+    )
 }
 
 @Composable

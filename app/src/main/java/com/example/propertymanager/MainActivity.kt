@@ -82,9 +82,9 @@ class MainActivity : ComponentActivity() {
                             propertyId
                         )
                         val roomViewModel = ViewModelProvider(
-                            this@MainActivity, // Scoping ViewModel to Activity for simplicity here
+                            this@MainActivity, 
                             roomViewModelFactory
-                        )[RoomViewModel::class.java]
+                        )["RoomViewModel_property_$propertyId", RoomViewModel::class.java] // Unique key
                         
                         RoomScreen(
                             propertyId = propertyId,
@@ -115,9 +115,9 @@ class MainActivity : ComponentActivity() {
                         )
                         // Get the ViewModel scoped to this propertyId
                         val roomViewModel = ViewModelProvider(
-                            this@MainActivity, // Scoping ViewModel to Activity for simplicity
+                            this@MainActivity, 
                             roomViewModelFactory
-                        )[RoomViewModel::class.java]
+                        )["RoomViewModel_property_$propertyId", RoomViewModel::class.java] // Unique key
 
                         RoomDetailsScreen(
                             roomId = roomId,

@@ -13,7 +13,7 @@ import com.example.propertymanager.data.model.RoomWithTenant // Import RoomWithT
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first // Added import
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import kotlin.math.abs
@@ -49,23 +49,21 @@ class PropertyViewModel(
     private suspend fun calculatePropertyFinancialSummary(property: PropertyEntity): PropertyFinancialSummary {
         var currentPropertyTotalDue = 0.0
         var currentPropertyTotalAdvance = 0.0
-        // Changed to use .first() on the Flow and RoomWithTenant
         val rooms: List<RoomWithTenant> = roomRepository.getRoomsForProperty(property.id).first()
 
         val calendar = Calendar.getInstance()
         val currentYear = calendar.get(Calendar.YEAR)
         val currentMonth = calendar.get(Calendar.MONTH) + 1
 
-        for (roomWithTenant in rooms) { // Iterate over RoomWithTenant
-            // Access RoomEntity via roomWithTenant.room
+        for (roomWithTenant in rooms) {
             val bill = monthlyBillRepository.getBillForRoomMonthYearSuspend(roomWithTenant.room.id, currentYear, currentMonth)
-            if (bill != null && bill.id != 0) { // Bill exists and is a persisted entity
+            if (bill != null && bill.id != 0) {
                 val installments = paymentInstallmentRepository.getInstallmentsForBillSuspend(bill.id)
                 bill.installments = installments.map { PaymentInstallment(amount = it.amount, date = it.date) }
-                bill.calculateTotalDue() // This should update totalAmountDue and amountPaid
+                bill.calculateTotalDue()
                 
                 val balance = bill.totalAmountDue - bill.amountPaid
-                if (balance > 0.001) { // Using a small epsilon for float comparison
+                if (balance > 0.001) {
                     currentPropertyTotalDue += balance
                 } else if (balance < -0.001) {
                     currentPropertyTotalAdvance += abs(balance)
@@ -79,7 +77,10 @@ class PropertyViewModel(
         viewModelScope.launch {
             val summaries = mutableMapOf<Int, PropertyFinancialSummary>()
             for (property in propertyList) {
-                summaries[property.id] = calculatePropertyFinancialSummary(property)
+                // Only calculate for non-hidden properties as they are the ones displayed
+                if (!property.isHidden) { 
+                    summaries[property.id] = calculatePropertyFinancialSummary(property)
+                }
             }
             _propertyFinancialSummaries.value = summaries
         }
@@ -87,16 +88,24 @@ class PropertyViewModel(
 
     fun addProperty(name: String, address: String) {
         viewModelScope.launch {
-            val property = PropertyEntity(name = name, address = address)
+            // By default, a new property is not hidden
+            val property = PropertyEntity(name = name, address = address, isHidden = false)
             propertyRepository.insert(property)
-            // The collect block in init should handle updating summaries
         }
     }
 
     fun deleteProperty(property: PropertyEntity) {
         viewModelScope.launch {
             propertyRepository.delete(property)
-            // The collect block in init should handle updating summaries
+        }
+    }
+
+    // Added function to set the hidden status of a property
+    fun setPropertyHiddenStatus(propertyId: Int, isHidden: Boolean) {
+        viewModelScope.launch {
+            propertyRepository.updatePropertyHiddenStatus(propertyId, isHidden)
+            // The Flow in init {} will automatically update the properties list
+            // and trigger updatePropertyFinancialSummaries.
         }
     }
 }

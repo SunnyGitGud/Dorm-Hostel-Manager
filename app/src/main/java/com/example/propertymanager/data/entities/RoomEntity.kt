@@ -24,5 +24,6 @@ data class RoomEntity(
     val rent: Double,
     val electricityRatePerUnit: Double = 10.0, // Existing field with default value
     val initialMeterReading: Double? = null,    // New field for initial meter reading
-    val initialMeterReadingDate: Long? = null   // New field for the date of initial reading
+    val initialMeterReadingDate: Long? = null,   // New field for the date of initial reading
+    val isHidden: Boolean = false // Added isHidden field
 )
