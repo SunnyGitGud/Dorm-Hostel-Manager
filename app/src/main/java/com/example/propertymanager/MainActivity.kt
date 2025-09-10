@@ -15,10 +15,10 @@ import com.example.propertymanager.data.repository.PropertyRepository
 import com.example.propertymanager.data.repository.RoomRepository
 import com.example.propertymanager.data.repository.TenantRepository
 import com.example.propertymanager.data.repository.MonthlyBillRepository
-import com.example.propertymanager.data.repository.PaymentInstallmentRepository // Added import
+import com.example.propertymanager.data.repository.PaymentInstallmentRepository
 import com.example.propertymanager.ui.screens.PropertyScreen
 import com.example.propertymanager.ui.screens.RoomScreen
-import com.example.propertymanager.ui.screens.RoomDetailsScreen // Added import for RoomDetailsScreen
+import com.example.propertymanager.ui.screens.RoomDetailsScreen
 import com.example.propertymanager.ui.viewmodel.PropertyViewModel
 import com.example.propertymanager.ui.viewmodel.PropertyViewModelFactory
 import com.example.propertymanager.ui.viewmodel.RoomViewModel
@@ -34,20 +34,28 @@ class MainActivity : ComponentActivity() {
 
         val database = PropertyManagerDatabase.getDatabase(applicationContext)
         val propertyDao = database.propertyDao()
-        val propertyRepository = PropertyRepository(propertyDao)
-        val propertyFactory = PropertyViewModelFactory(propertyRepository)
-        propertyViewModel = ViewModelProvider(this, propertyFactory)[PropertyViewModel::class.java]
-
-        // DAOs for RoomViewModelFactory - can be defined once here
+        // DAOs for RoomViewModelFactory & PropertyViewModelFactory - can be defined once here
         val roomDao = database.roomDao()
         val tenantDao = database.tenantDao()
         val monthlyBillDao = database.monthlyBillDao()
-        val paymentInstallmentDao = database.paymentInstallmentDao() // Added DAO
+        val paymentInstallmentDao = database.paymentInstallmentDao()
 
+        // Repositories
+        val propertyRepository = PropertyRepository(propertyDao)
         val roomRepository = RoomRepository(roomDao)
         val tenantRepository = TenantRepository(tenantDao)
         val monthlyBillRepository = MonthlyBillRepository(monthlyBillDao)
-        val paymentInstallmentRepository = PaymentInstallmentRepository(paymentInstallmentDao) // Added Repository
+        val paymentInstallmentRepository = PaymentInstallmentRepository(paymentInstallmentDao)
+
+        // PropertyViewModelFactory setup
+        val propertyFactory = PropertyViewModelFactory(
+            propertyRepository,
+            roomRepository, 
+            monthlyBillRepository, 
+            paymentInstallmentRepository
+        )
+        propertyViewModel = ViewModelProvider(this, propertyFactory)[PropertyViewModel::class.java]
+
 
         setContent {
             val navController = rememberNavController()
@@ -70,7 +78,7 @@ class MainActivity : ComponentActivity() {
                             roomRepository,
                             tenantRepository,
                             monthlyBillRepository,
-                            paymentInstallmentRepository, // Added repository
+                            paymentInstallmentRepository,
                             propertyId
                         )
                         val roomViewModel = ViewModelProvider(
@@ -79,7 +87,7 @@ class MainActivity : ComponentActivity() {
                         )[RoomViewModel::class.java]
                         
                         RoomScreen(
-                            propertyId = propertyId, // Pass propertyId to RoomScreen
+                            propertyId = propertyId,
                             roomViewModel = roomViewModel, 
                             navController = navController
                         )
@@ -88,7 +96,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 composable(
-                    route = "room_details/{propertyId}/{roomId}", // New route
+                    route = "room_details/{propertyId}/{roomId}",
                     arguments = listOf(
                         navArgument("propertyId") { type = NavType.IntType },
                         navArgument("roomId") { type = NavType.IntType }
@@ -102,7 +110,7 @@ class MainActivity : ComponentActivity() {
                             roomRepository,
                             tenantRepository,
                             monthlyBillRepository,
-                            paymentInstallmentRepository, // Added repository
+                            paymentInstallmentRepository,
                             propertyId // Use propertyId for the factory
                         )
                         // Get the ViewModel scoped to this propertyId

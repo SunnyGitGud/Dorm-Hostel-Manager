@@ -4,38 +4,99 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.propertymanager.data.entities.PropertyEntity
 import com.example.propertymanager.data.repository.PropertyRepository
+import com.example.propertymanager.data.repository.RoomRepository
+import com.example.propertymanager.data.repository.MonthlyBillRepository
+import com.example.propertymanager.data.repository.PaymentInstallmentRepository
+import com.example.propertymanager.data.entities.MonthlyBillEntity
+import com.example.propertymanager.data.entities.PaymentInstallment
+import com.example.propertymanager.data.model.RoomWithTenant // Import RoomWithTenant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first // Added import
 import kotlinx.coroutines.launch
+import java.util.Calendar
+import kotlin.math.abs
 
-class PropertyViewModel(private val repository: PropertyRepository) : ViewModel() {
+// Data class for property financial summary
+data class PropertyFinancialSummary(
+    val totalDue: Double = 0.0,
+    val totalAdvance: Double = 0.0
+)
 
-    // Holds the current list of properties
+class PropertyViewModel(
+    private val propertyRepository: PropertyRepository,
+    private val roomRepository: RoomRepository,
+    private val monthlyBillRepository: MonthlyBillRepository,
+    private val paymentInstallmentRepository: PaymentInstallmentRepository
+) : ViewModel() {
+
     private val _properties = MutableStateFlow<List<PropertyEntity>>(emptyList())
     val properties: StateFlow<List<PropertyEntity>> = _properties.asStateFlow()
 
+    private val _propertyFinancialSummaries = MutableStateFlow<Map<Int, PropertyFinancialSummary>>(emptyMap())
+    val propertyFinancialSummaries: StateFlow<Map<Int, PropertyFinancialSummary>> = _propertyFinancialSummaries.asStateFlow()
+
     init {
-        // Load properties from database
         viewModelScope.launch {
-            repository.getAllProperties().collect {
-                _properties.value = it
+            propertyRepository.getAllProperties().collect { propertyList ->
+                _properties.value = propertyList
+                updatePropertyFinancialSummaries(propertyList)
             }
         }
     }
 
-    // Insert a new property
-    fun addProperty(name: String, address: String) {
+    private suspend fun calculatePropertyFinancialSummary(property: PropertyEntity): PropertyFinancialSummary {
+        var currentPropertyTotalDue = 0.0
+        var currentPropertyTotalAdvance = 0.0
+        // Changed to use .first() on the Flow and RoomWithTenant
+        val rooms: List<RoomWithTenant> = roomRepository.getRoomsForProperty(property.id).first()
+
+        val calendar = Calendar.getInstance()
+        val currentYear = calendar.get(Calendar.YEAR)
+        val currentMonth = calendar.get(Calendar.MONTH) + 1
+
+        for (roomWithTenant in rooms) { // Iterate over RoomWithTenant
+            // Access RoomEntity via roomWithTenant.room
+            val bill = monthlyBillRepository.getBillForRoomMonthYearSuspend(roomWithTenant.room.id, currentYear, currentMonth)
+            if (bill != null && bill.id != 0) { // Bill exists and is a persisted entity
+                val installments = paymentInstallmentRepository.getInstallmentsForBillSuspend(bill.id)
+                bill.installments = installments.map { PaymentInstallment(amount = it.amount, date = it.date) }
+                bill.calculateTotalDue() // This should update totalAmountDue and amountPaid
+                
+                val balance = bill.totalAmountDue - bill.amountPaid
+                if (balance > 0.001) { // Using a small epsilon for float comparison
+                    currentPropertyTotalDue += balance
+                } else if (balance < -0.001) {
+                    currentPropertyTotalAdvance += abs(balance)
+                }
+            }
+        }
+        return PropertyFinancialSummary(totalDue = currentPropertyTotalDue, totalAdvance = currentPropertyTotalAdvance)
+    }
+
+    private fun updatePropertyFinancialSummaries(propertyList: List<PropertyEntity>) {
         viewModelScope.launch {
-            val property = PropertyEntity(name = name, address = address)
-            repository.insert(property)
+            val summaries = mutableMapOf<Int, PropertyFinancialSummary>()
+            for (property in propertyList) {
+                summaries[property.id] = calculatePropertyFinancialSummary(property)
+            }
+            _propertyFinancialSummaries.value = summaries
         }
     }
 
-    // Delete a property
+    fun addProperty(name: String, address: String) {
+        viewModelScope.launch {
+            val property = PropertyEntity(name = name, address = address)
+            propertyRepository.insert(property)
+            // The collect block in init should handle updating summaries
+        }
+    }
+
     fun deleteProperty(property: PropertyEntity) {
         viewModelScope.launch {
-            repository.delete(property)
+            propertyRepository.delete(property)
+            // The collect block in init should handle updating summaries
         }
     }
 }

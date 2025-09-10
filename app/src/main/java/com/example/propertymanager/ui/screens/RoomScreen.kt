@@ -1,20 +1,27 @@
 package com.example.propertymanager.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-// import androidx.compose.material.icons.filled.Edit // No longer solely for Edit Tenant
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -22,7 +29,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-// import androidx.compose.material3.IconButton // IconButton for delete will be removed
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -38,17 +45,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.propertymanager.data.model.RoomWithTenant
 import com.example.propertymanager.ui.viewmodel.RoomViewModel
-import com.example.propertymanager.utils.formatDate // Corrected import
+import com.example.propertymanager.ui.viewmodel.BillStatusSummary // Import the data class
+import com.example.propertymanager.utils.formatDate
+import java.text.NumberFormat
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: NavController) {
     val roomsWithTenants by roomViewModel.roomsWithTenants.collectAsState()
+    val roomBillSummaries by roomViewModel.roomBillSummaries.collectAsState()
     var showAddRoomDialog by remember { mutableStateOf(false) }
 
     var showAddEditTenantDialog by remember { mutableStateOf(false) }
@@ -68,28 +83,34 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
         LazyColumn(
             modifier = Modifier
                 .padding(innerPadding)
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             if (roomsWithTenants.isEmpty()) {
-                item { Text("No rooms found. Click the '+' button to add one.") }
+                item {
+                    Text(
+                        "No rooms found. Click the '+' button to add one.",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
             } else {
-                items(roomsWithTenants) { roomWithTenant ->
+                items(roomsWithTenants, key = { it.room.id }) { roomWithTenant ->
                     RoomItem(
                         roomWithTenant = roomWithTenant,
-                        onAddEditTenant = { // This will be used for "Add Tenant" or if dialog is called for editing from elsewhere
+                        billStatusSummary = roomBillSummaries[roomWithTenant.room.id],
+                        onAddEditTenant = { 
                             selectedRoomForTenantAction = it
                             showAddEditTenantDialog = true
                         },
-                        onRemoveTenant = { roomWithTenantToRemove -> // This is for "Record Move-Out"
+                        onRemoveTenant = { roomWithTenantToRemove ->
                             tenantPendingRemoval = roomWithTenantToRemove
                             showConfirmRemoveTenantDialog = true
                         },
-                        onViewDetails = { pId, rId ->
+                        onViewDetails = { _, rId ->
                             navController.navigate("room_details/${roomWithTenant.room.propertyId}/$rId")
-                        },
-                        propertyId = propertyId
+                        }
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                 }
             }
         }
@@ -146,68 +167,123 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class) // Added for Card onClick
 @Composable
 fun RoomItem(
     roomWithTenant: RoomWithTenant,
+    billStatusSummary: BillStatusSummary?,
     onAddEditTenant: (RoomWithTenant) -> Unit,
     onRemoveTenant: (RoomWithTenant) -> Unit,
-    onViewDetails: (propertyId: Int, roomId: Int) -> Unit,
-    propertyId: Int
+    onViewDetails: (propertyId: Int, roomId: Int) -> Unit
 ) {
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) }
+    var isExpanded by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(8.dp),
+        onClick = { isExpanded = !isExpanded } // Make card clickable
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = "Room: ${roomWithTenant.room.name}", style = MaterialTheme.typography.titleMedium)
-            Text(text = "Rent: $${String.format("%.2f", roomWithTenant.room.rent)}", style = MaterialTheme.typography.bodySmall)
-            Text(
-                text = "Elec. Rate: $${String.format("%.2f", roomWithTenant.room.electricityRatePerUnit)}/unit", 
-                style = MaterialTheme.typography.bodySmall
-            )
-            roomWithTenant.room.initialMeterReading?.let {
-                Text(
-                    text = "Initial Reading: $it units on ${formatDate(roomWithTenant.room.initialMeterReadingDate)}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            Text("Tenant Info:", style = MaterialTheme.typography.titleSmall)
-            if (roomWithTenant.tenant != null && roomWithTenant.tenant.moveOutDate == null) { // Active tenant
-                Text("Name: ${roomWithTenant.tenant.name}", style = MaterialTheme.typography.bodyMedium)
-                Text("Mobile: ${roomWithTenant.tenant.mobile}", style = MaterialTheme.typography.bodyMedium)
-                Text("Move-in: ${formatDate(roomWithTenant.tenant.moveInDate)}", style = MaterialTheme.typography.bodyMedium)
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(onClick = { onRemoveTenant(roomWithTenant) }) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Move Out", modifier = Modifier.padding(end = 4.dp)) // Updated contentDescription
-                    Text("Move Out") // Updated Text
-                }
-
-            } else if (roomWithTenant.tenant != null && roomWithTenant.tenant.moveOutDate != null) { // Tenant has moved out
-                Text("Name: ${roomWithTenant.tenant.name} (Moved Out)", style = MaterialTheme.typography.bodyMedium)
-                Text("Move-out: ${formatDate(roomWithTenant.tenant.moveOutDate)}", style = MaterialTheme.typography.bodyMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(onClick = { onAddEditTenant(roomWithTenant) }) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add New Tenant", modifier = Modifier.padding(end = 4.dp))
-                    Text("Add New Tenant")
-                }
-            } else { // No tenant ever assigned or previous tenant record cleared
-                Text("No tenant assigned.", style = MaterialTheme.typography.bodyMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(onClick = { onAddEditTenant(roomWithTenant) }) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add Tenant", modifier = Modifier.padding(end = 4.dp))
-                    Text("Add Tenant")
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            OutlinedButton(
-                onClick = { onViewDetails(roomWithTenant.room.propertyId, roomWithTenant.room.id) },
-                modifier = Modifier.fillMaxWidth()
+        Box(modifier = Modifier.fillMaxWidth()) { 
+            Column(
+                modifier = Modifier.padding(16.dp)
             ) {
-                Icon(Icons.Filled.ArrowForward, contentDescription = "View Details", modifier = Modifier.padding(end = 4.dp))
-                Text("View Details / Manage Bills")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Room: ${roomWithTenant.room.name}", 
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f) // Allow text to take available space
+                    )
+                    IconButton(onClick = { isExpanded = !isExpanded }) {
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                            contentDescription = if (isExpanded) "Collapse" else "Expand"
+                        )
+                    }
+                }
+
+                AnimatedVisibility(visible = isExpanded) {
+                    Column {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(text = "Rent: ${currencyFormat.format(roomWithTenant.room.rent)}", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            text = "Elec. Rate: ${currencyFormat.format(roomWithTenant.room.electricityRatePerUnit)}/unit", 
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        roomWithTenant.room.initialMeterReading?.let {
+                            Text(
+                                text = "Initial Reading: $it units on ${formatDate(roomWithTenant.room.initialMeterReadingDate)}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Tenant Info:", style = MaterialTheme.typography.titleSmall)
+                        if (roomWithTenant.tenant != null && roomWithTenant.tenant.moveOutDate == null) { 
+                            Text("Name: ${roomWithTenant.tenant.name}", style = MaterialTheme.typography.bodyMedium)
+                            Text("Mobile: ${roomWithTenant.tenant.mobile}", style = MaterialTheme.typography.bodyMedium)
+                            Text("Move-in: ${formatDate(roomWithTenant.tenant.moveInDate)}", style = MaterialTheme.typography.bodyMedium)
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(onClick = { onRemoveTenant(roomWithTenant) }) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Move Out", modifier = Modifier.padding(end = 4.dp))
+                                Text("Move Out")
+                            }
+
+                        } else if (roomWithTenant.tenant != null && roomWithTenant.tenant.moveOutDate != null) {
+                            Text("Name: ${roomWithTenant.tenant.name} (Moved Out)", style = MaterialTheme.typography.bodyMedium)
+                            Text("Move-out: ${formatDate(roomWithTenant.tenant.moveOutDate)}", style = MaterialTheme.typography.bodyMedium)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(onClick = { onAddEditTenant(roomWithTenant) }) {
+                                Icon(Icons.Filled.Add, contentDescription = "Add New Tenant", modifier = Modifier.padding(end = 4.dp))
+                                Text("Add New Tenant")
+                            }
+                        } else { 
+                            Text("No tenant assigned.", style = MaterialTheme.typography.bodyMedium)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(onClick = { onAddEditTenant(roomWithTenant) }) {
+                                Icon(Icons.Filled.Add, contentDescription = "Add Tenant", modifier = Modifier.padding(end = 4.dp))
+                                Text("Add Tenant")
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedButton(
+                            onClick = { onViewDetails(roomWithTenant.room.propertyId, roomWithTenant.room.id) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.ArrowForward, contentDescription = "View Details", modifier = Modifier.padding(end = 4.dp))
+                            Text("View Details / Manage Bills")
+                        }
+                    }
+                }
+            }
+
+            // Bill Status Badge (Due/Advance) - Stays in the Box, aligned TopEnd
+            if (billStatusSummary != null && (billStatusSummary.isDue || billStatusSummary.isAdvance)) {
+                val statusText = currencyFormat.format(billStatusSummary.displayAmount)
+                val backgroundColor = if (billStatusSummary.isDue) Color(0xFFB00020) else Color(0xFF00C853)
+                val textColor = Color.White
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp, end = 8.dp) // Adjusted padding to not overlap icon too much
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(backgroundColor)
+                        .padding(horizontal = 6.dp, vertical = 3.dp) 
+                ) {
+                    Text(
+                        text = if (billStatusSummary.isDue) "Due: $statusText" else "Adv: $statusText",
+                        color = textColor,
+                        fontSize = 10.sp, 
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }
@@ -268,8 +344,9 @@ fun AddEditTenantDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (nameError != null) {
-                    Text(nameError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                val currentNameError = nameError
+                if (currentNameError != null) {
+                    Text(currentNameError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
@@ -281,8 +358,9 @@ fun AddEditTenantDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (mobileError != null) {
-                    Text(mobileError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                val currentMobileError = mobileError
+                if (currentMobileError != null) {
+                    Text(currentMobileError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
@@ -339,7 +417,7 @@ fun AddRoomDialog(
     var initialMeterReadingString by remember { mutableStateOf("") } 
 
     var nameError by remember { mutableStateOf<String?>(null) }
-    var rentError by remember { mutableStateOf<String?>(null) }
+    var rentError by remember { mutableStateOf<String?>(null) } 
     var electricityRateError by remember { mutableStateOf<String?>(null) }
     var initialMeterReadingError by remember { mutableStateOf<String?>(null) }
 
@@ -356,8 +434,9 @@ fun AddRoomDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (nameError != null) {
-                    Text(nameError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                val currentNameError = nameError 
+                if (currentNameError != null) {
+                    Text(currentNameError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
@@ -369,8 +448,9 @@ fun AddRoomDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (rentError != null) {
-                    Text(rentError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                val currentRentError = rentError 
+                if (currentRentError != null) {
+                    Text(currentRentError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
@@ -382,8 +462,9 @@ fun AddRoomDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (electricityRateError != null) {
-                    Text(electricityRateError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                val currentElectricityRateError = electricityRateError
+                if (currentElectricityRateError != null) {
+                    Text(currentElectricityRateError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField( 
@@ -395,8 +476,9 @@ fun AddRoomDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (initialMeterReadingError != null) {
-                    Text(initialMeterReadingError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                val currentInitialMeterReadingError = initialMeterReadingError 
+                if (currentInitialMeterReadingError != null) {
+                    Text(currentInitialMeterReadingError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         },

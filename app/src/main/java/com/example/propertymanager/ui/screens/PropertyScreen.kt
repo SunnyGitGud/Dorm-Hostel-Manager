@@ -28,17 +28,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.propertymanager.data.entities.PropertyEntity
 import com.example.propertymanager.ui.viewmodel.PropertyViewModel
+import com.example.propertymanager.ui.viewmodel.PropertyFinancialSummary // Added import
+import java.text.NumberFormat // Added import
+import java.util.Locale // Added import
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PropertyScreen(
     viewModel: PropertyViewModel,
-    onPropertyClick: (Int) -> Unit // Added onPropertyClick lambda
+    onPropertyClick: (Int) -> Unit
 ) {
     val properties by viewModel.properties.collectAsState()
+    val propertyFinancialSummaries by viewModel.propertyFinancialSummaries.collectAsState() // Added
     var showDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -61,10 +67,11 @@ fun PropertyScreen(
                     Text("No properties found. Click the '+' button to add one.")
                 }
             } else {
-                items(properties) { property ->
+                items(properties, key = { it.id }) { property ->
                     PropertyItem(
                         property = property,
-                        onClick = { onPropertyClick(property.id) } // Pass property ID on click
+                        financialSummary = propertyFinancialSummaries[property.id], // Pass summary
+                        onClick = { onPropertyClick(property.id) }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -83,21 +90,46 @@ fun PropertyScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class) // Added for Card onClick
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PropertyItem(
     property: PropertyEntity,
-    onClick: () -> Unit // Added onClick lambda
+    financialSummary: PropertyFinancialSummary?,
+    onClick: () -> Unit
 ) {
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        onClick = onClick // Made Card clickable
+        onClick = onClick
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = property.name, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(4.dp))
             Text(text = property.address, style = MaterialTheme.typography.bodySmall)
+            
+            financialSummary?.let {
+                if (it.totalDue > 0.001) { // Epsilon for double comparison
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Total Due: ${currencyFormat.format(it.totalDue)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFB00020) // Red color for due amounts
+                    )
+                }
+                // Optionally, display totalAdvance if needed in the future
+                // if (it.totalAdvance > 0.001) {
+                //     Spacer(modifier = Modifier.height(4.dp))
+                //     Text(
+                //         text = "Total Advance: ${currencyFormat.format(it.totalAdvance)}",
+                //         style = MaterialTheme.typography.bodyMedium,
+                //         fontWeight = FontWeight.SemiBold,
+                //         color = Color(0xFF008000) // Green color for advance amounts
+                //     )
+                // }
+            }
         }
     }
 }
@@ -125,8 +157,9 @@ fun AddPropertyDialog(
                     isError = nameError != null,
                     singleLine = true
                 )
-                if (nameError != null) {
-                    Text(nameError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                val currentNameError = nameError // Fix for smart cast
+                if (currentNameError != null) {
+                    Text(currentNameError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
@@ -136,8 +169,9 @@ fun AddPropertyDialog(
                     isError = addressError != null,
                     singleLine = true
                 )
-                 if (addressError != null) {
-                    Text(addressError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                val currentAddressError = addressError // Fix for smart cast
+                 if (currentAddressError != null) {
+                    Text(currentAddressError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         },

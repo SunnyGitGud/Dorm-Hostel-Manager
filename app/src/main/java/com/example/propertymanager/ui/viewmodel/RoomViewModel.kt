@@ -21,28 +21,66 @@ import kotlinx.coroutines.launch
 import java.util.Calendar
 import kotlin.math.abs
 
+// Data class for bill summary on Room Card
+data class BillStatusSummary(
+    val amount: Double = 0.0, // Positive for due, negative for advance
+    val isDue: Boolean = false,
+    val isAdvance: Boolean = false,
+    val isGenerated: Boolean = false,
+    val displayAmount: Double = 0.0 // abs(amount)
+)
+
 class RoomViewModel(
     private val roomRepository: RoomRepository,
     private val tenantRepository: TenantRepository,
     private val monthlyBillRepository: MonthlyBillRepository,
     private val paymentInstallmentRepository: PaymentInstallmentRepository,
-    private val propertyId: Int // Note: This is propertyId, not roomId for the ViewModel's general scope
+    private val propertyId: Int
 ) : ViewModel() {
 
     private val _roomsWithTenants = MutableStateFlow<List<RoomWithTenant>>(emptyList())
     val roomsWithTenants: StateFlow<List<RoomWithTenant>> = _roomsWithTenants.asStateFlow()
 
-    // Removed: lastSuccessfullySavedBillId and _undoableBillDetails
-
     private val _currentCalendarMonthBill = MutableStateFlow<MonthlyBillEntity?>(null)
     val currentCalendarMonthBill: StateFlow<MonthlyBillEntity?> = _currentCalendarMonthBill.asStateFlow()
 
+    private val _roomBillSummaries = MutableStateFlow<Map<Int, BillStatusSummary>>(emptyMap())
+    val roomBillSummaries: StateFlow<Map<Int, BillStatusSummary>> = _roomBillSummaries.asStateFlow()
+
     init {
         viewModelScope.launch {
-            roomRepository.getRoomsForProperty(propertyId).collect {
-                _roomsWithTenants.value = it
-                // Initial load for current room's bill will be triggered by UI when specific roomId is known
+            roomRepository.getRoomsForProperty(propertyId).collect { rooms ->
+                _roomsWithTenants.value = rooms
+                updateRoomBillSummaries(rooms)
             }
+        }
+    }
+
+    private fun updateRoomBillSummaries(rooms: List<RoomWithTenant>) {
+        viewModelScope.launch {
+            val summaries = mutableMapOf<Int, BillStatusSummary>()
+            val calendar = Calendar.getInstance()
+            val currentYear = calendar.get(Calendar.YEAR)
+            val currentMonth = calendar.get(Calendar.MONTH) + 1
+
+            for (roomWithTenant in rooms) {
+                val room = roomWithTenant.room
+                val bill = getOrCreateBillForRoom(room.id, currentYear, currentMonth, room.rent)
+
+                val balance = bill.totalAmountDue - bill.amountPaid
+                val isGenerated = bill.id != 0
+                val isDue = isGenerated && balance > 0.001 
+                val isAdvance = isGenerated && balance < -0.001
+
+                summaries[room.id] = BillStatusSummary(
+                    amount = balance,
+                    isDue = isDue,
+                    isAdvance = isAdvance,
+                    isGenerated = isGenerated,
+                    displayAmount = kotlin.math.abs(balance)
+                )
+            }
+            _roomBillSummaries.value = summaries
         }
     }
 
@@ -61,7 +99,7 @@ class RoomViewModel(
                 )
                 _currentCalendarMonthBill.value = bill
             } else {
-                _currentCalendarMonthBill.value = null // Room not found
+                _currentCalendarMonthBill.value = null
             }
         }
     }
@@ -77,12 +115,14 @@ class RoomViewModel(
                 initialMeterReadingDate = if (initialMeterReading != null) System.currentTimeMillis() else null
             )
             roomRepository.insert(room)
+            // roomsWithTenants will auto-update and trigger updateRoomBillSummaries via collect
         }
     }
 
     fun updateRoomDetails(room: RoomEntity) {
         viewModelScope.launch {
             roomRepository.update(room)
+            updateRoomBillSummaries(_roomsWithTenants.value) // Manually trigger for existing rooms
         }
     }
 
@@ -130,9 +170,13 @@ class RoomViewModel(
                             isInitialReadingRolledOver = false
                         )
                         initialMoveInBill.installments = emptyList()
-                        saveBill(initialMoveInBill) 
+                        saveBill(initialMoveInBill) // saveBill will trigger updateRoomBillSummaries
                     }
+                } else {
+                    updateRoomBillSummaries(_roomsWithTenants.value) // Tenant details might affect existing bill display name
                 }
+            } else {
+                 updateRoomBillSummaries(_roomsWithTenants.value)
             }
         }
     }
@@ -140,12 +184,14 @@ class RoomViewModel(
     fun updateTenant(tenant: TenantEntity) {
         viewModelScope.launch {
             tenantRepository.insertOrUpdateTenant(tenant)
+            updateRoomBillSummaries(_roomsWithTenants.value)
         }
     }
 
     fun recordTenantMoveOutDate(tenantId: Int, moveOutTimestamp: Long) {
         viewModelScope.launch {
             tenantRepository.setTenantMoveOutDate(tenantId, moveOutTimestamp)
+            updateRoomBillSummaries(_roomsWithTenants.value)
         }
     }
 
@@ -313,11 +359,9 @@ class RoomViewModel(
             if (installmentEntities.isNotEmpty()) {
                 paymentInstallmentRepository.addAllInstallments(installmentEntities)
             }
-
-            // Removed undo logic: lastSuccessfullySavedBillId and _undoableBillDetails.value update
             
-            // Refresh current calendar month bill state as the save might have affected it
             loadCurrentCalendarMonthBill(bill.roomId) 
+            updateRoomBillSummaries(_roomsWithTenants.value) // Update summaries after save
         }
 
         if (savedBillId > 0 && performRoomMeterRolloverThisSave && billToSave.monthEndMeterReading != null) {
@@ -326,11 +370,6 @@ class RoomViewModel(
         return savedBillId
     }
 
-    // Removed: undoLastBillCreation() function
-
-    // Removed: clearUndoState() function
-
-    // Call this if the current calendar month bill needs to be explicitly cleared from the UI perspective
     fun clearCurrentCalendarMonthBillState(){
         _currentCalendarMonthBill.value = null
     }
