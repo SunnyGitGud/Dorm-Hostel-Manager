@@ -5,6 +5,7 @@ import androidx.room.ForeignKey
 import androidx.room.Ignore
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlin.math.ceil // Import for ceil function
 
 // Define PaymentInstallment as a separate data class (can be in the same file)
 data class PaymentInstallment(
@@ -49,26 +50,31 @@ data class MonthlyBillEntity(
     var otherChargesDescription: String? = null,
     var previousMonthDues: Double = 0.0,
 
-    var totalAmountDue: Double = 0.0,
+    var totalAmountDue: Double = 0.0, // Will be rounded up
     var amountPaid: Double = 0.0,
     var dueDate: Long = 0L,
     var paymentDate: Long? = null,
     var isFullyPaid: Boolean = false,
     var isInitialReadingRolledOver: Boolean = false
-    // installments is removed from primary constructor
 ) {
-    @Ignore // Room will ignore this field. Persistence requires a TypeConverter.
+    @Ignore
     var installments: List<PaymentInstallment> = emptyList()
 
     fun calculateTotalDue() {
+        // Calculate precise electricity bill as Double
         electricityBill = (electricityUnits ?: 0.0) * (electricityRateAtBillingTime ?: 0.0)
         
-        totalAmountDue = rentAtBillingTime +
-                         electricityBill +
-                         waterBill +
-                         otherCharges +
-                         previousMonthDues
+        // Sum of all components as Double
+        val preciseTotal = rentAtBillingTime +
+                           electricityBill +
+                           waterBill +
+                           otherCharges +
+                           previousMonthDues
 
+        // Round the final totalAmountDue up to the next whole number
+        totalAmountDue = ceil(preciseTotal)
+
+        // isFullyPaid check remains the same, comparing two Doubles
         isFullyPaid = amountPaid >= totalAmountDue - 0.001 
         if (!isFullyPaid) {
             // paymentDate on the bill might represent the date the bill became fully paid.
@@ -76,7 +82,8 @@ data class MonthlyBillEntity(
             if (paymentDate == null && amountPaid > 0) {
                 paymentDate = installments.maxOfOrNull { it.date } ?: System.currentTimeMillis()
             } else if (amountPaid == 0.0 && totalAmountDue == 0.0) {
-                paymentDate = paymentDate ?: System.currentTimeMillis()
+                 // If bill is 0 and paid is 0, consider it paid on its due date or current time if due date is not set
+                paymentDate = paymentDate ?: dueDate.takeIf { it > 0 } ?: System.currentTimeMillis()
             }
         }
     }

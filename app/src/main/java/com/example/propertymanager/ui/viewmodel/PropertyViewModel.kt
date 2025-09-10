@@ -9,7 +9,7 @@ import com.example.propertymanager.data.repository.MonthlyBillRepository
 import com.example.propertymanager.data.repository.PaymentInstallmentRepository
 import com.example.propertymanager.data.entities.MonthlyBillEntity
 import com.example.propertymanager.data.entities.PaymentInstallment
-import com.example.propertymanager.data.model.RoomWithTenant // Import RoomWithTenant
+import com.example.propertymanager.data.model.RoomWithTenant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,11 +17,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import kotlin.math.abs
+import kotlin.math.ceil // Import for ceil function
 
 // Data class for property financial summary
 data class PropertyFinancialSummary(
-    val totalDue: Double = 0.0,
-    val totalAdvance: Double = 0.0
+    val totalDue: Double = 0.0,    // Will be the ceil-ed sum of individual room dues
+    val totalAdvance: Double = 0.0 // Will be the ceil-ed sum of individual room advances
 )
 
 class PropertyViewModel(
@@ -57,27 +58,33 @@ class PropertyViewModel(
 
         for (roomWithTenant in rooms) {
             val bill = monthlyBillRepository.getBillForRoomMonthYearSuspend(roomWithTenant.room.id, currentYear, currentMonth)
-            if (bill != null && bill.id != 0) {
-                val installments = paymentInstallmentRepository.getInstallmentsForBillSuspend(bill.id)
-                bill.installments = installments.map { PaymentInstallment(amount = it.amount, date = it.date) }
-                bill.calculateTotalDue()
+            if (bill != null && bill.id != 0) { 
+                val installmentEntities = paymentInstallmentRepository.getInstallmentsForBillSuspend(bill.id)
+                bill.amountPaid = installmentEntities.sumOf { it.amount } 
+                bill.installments = installmentEntities.map { PaymentInstallment(amount = it.amount, date = it.date) }
+                
+                // bill.totalAmountDue is already ceil-ed from MonthlyBillEntity.calculateTotalDue()
+                bill.calculateTotalDue() 
                 
                 val balance = bill.totalAmountDue - bill.amountPaid
-                if (balance > 0.001) {
+                if (balance > 0.001) { 
                     currentPropertyTotalDue += balance
                 } else if (balance < -0.001) {
                     currentPropertyTotalAdvance += abs(balance)
                 }
             }
         }
-        return PropertyFinancialSummary(totalDue = currentPropertyTotalDue, totalAdvance = currentPropertyTotalAdvance)
+        // Apply ceil to the accumulated sums before creating the summary object
+        return PropertyFinancialSummary(
+            totalDue = ceil(currentPropertyTotalDue),
+            totalAdvance = ceil(currentPropertyTotalAdvance)
+        )
     }
 
     private fun updatePropertyFinancialSummaries(propertyList: List<PropertyEntity>) {
         viewModelScope.launch {
             val summaries = mutableMapOf<Int, PropertyFinancialSummary>()
             for (property in propertyList) {
-                // Only calculate for non-hidden properties as they are the ones displayed
                 if (!property.isHidden) { 
                     summaries[property.id] = calculatePropertyFinancialSummary(property)
                 }
@@ -88,7 +95,6 @@ class PropertyViewModel(
 
     fun addProperty(name: String, address: String) {
         viewModelScope.launch {
-            // By default, a new property is not hidden
             val property = PropertyEntity(name = name, address = address, isHidden = false)
             propertyRepository.insert(property)
         }
@@ -100,12 +106,9 @@ class PropertyViewModel(
         }
     }
 
-    // Added function to set the hidden status of a property
     fun setPropertyHiddenStatus(propertyId: Int, isHidden: Boolean) {
         viewModelScope.launch {
             propertyRepository.updatePropertyHiddenStatus(propertyId, isHidden)
-            // The Flow in init {} will automatically update the properties list
-            // and trigger updatePropertyFinancialSummaries.
         }
     }
 }
