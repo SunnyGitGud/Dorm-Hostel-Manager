@@ -92,7 +92,8 @@ class RoomViewModel(
                             roomId = roomId, year = moveInYear, month = moveInMonth,
                             tenantIdAtBillingTime = savedTenantId.toInt(),
                             tenantNameAtBillingTime = name,
-                            rentAtBillingTime = rentForMoveInMonth,
+                            rentAtBillingTime = rentForMoveInMonth, // Pro-rata or full rent
+                            isFullRentAppliedOverride = null, // New bills start with null, dialog decides
                             electricityRateAtBillingTime = roomEntity.electricityRatePerUnit,
                             previousMonthDues = 0.0,
                             dueDate = defaultDueDateCalendar.timeInMillis,
@@ -119,14 +120,15 @@ class RoomViewModel(
 
     suspend fun getOrCreateBillForRoom(
         roomId: Int,
-        billYear: Int, // The year of the bill being requested
-        billMonth: Int, // The month of the bill being requested
-        currentRoomFullRent: Double // UI's idea of full rent for this period, use roomEntity.rent for definitive
+        billYear: Int,
+        billMonth: Int,
+        currentRoomFullRent: Double // This is the room's current full rent, from RoomEntity
     ): MonthlyBillEntity {
         val roomEntity = roomRepository.getRoomById(roomId)
             ?: return MonthlyBillEntity( // Fallback for no room data
                 roomId = roomId, year = billYear, month = billMonth,
-                tenantNameAtBillingTime = "Error: Room not found", rentAtBillingTime = 0.0, isFullyPaid = true
+                tenantNameAtBillingTime = "Error: Room not found", rentAtBillingTime = 0.0, isFullyPaid = true,
+                isFullRentAppliedOverride = false // Default to false if error
             )
 
         val startOfRequestedMonth = Calendar.getInstance().apply { set(billYear, billMonth - 1, 1, 0, 0, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
@@ -144,99 +146,86 @@ class RoomViewModel(
             val tenantMoveInMonth = tenantMoveInCal.get(Calendar.MONTH) + 1
 
             if (prevBillQueryYear > tenantMoveInYear || (prevBillQueryYear == tenantMoveInYear && prevBillQueryMonth >= tenantMoveInMonth)) {
-                val previousMonthBillObject = getOrCreateBillForRoom(roomId, prevBillQueryYear, prevBillQueryMonth, roomEntity.rent) // Recursive call
-                
+                val previousMonthBillObject = getOrCreateBillForRoom(roomId, prevBillQueryYear, prevBillQueryMonth, roomEntity.rent)
                 val startOfPrevBillMonthForTenantCheck = Calendar.getInstance().apply { set(prevBillQueryYear, prevBillQueryMonth - 1, 1, 0,0,0); set(Calendar.MILLISECOND,0)}.timeInMillis
                 val endOfPrevBillMonthForTenantCheck = Calendar.getInstance().apply { set(prevBillQueryYear, prevBillQueryMonth - 1, 1,23,59,59); set(Calendar.MILLISECOND,999); set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))}.timeInMillis
                 val tenantForPreviousBillObjectPeriod = tenantRepository.getTenantForBillPeriod(roomId, startOfPrevBillMonthForTenantCheck, endOfPrevBillMonthForTenantCheck)
-
                 if (tenantForPreviousBillObjectPeriod != null && tenantForRequestedPeriod.id == tenantForPreviousBillObjectPeriod.id) {
                     calculatedPreviousMonthDues = previousMonthBillObject.totalAmountDue - previousMonthBillObject.amountPaid
                 }
             }
         }
 
-        var billToProcess = monthlyBillRepository.getBillForRoomMonthYearSuspend(roomId, billYear, billMonth) // Declared as var
-        val defaultDueDateCalendar = Calendar.getInstance().apply { set(billYear, billMonth - 1, 5) }
+        var billToProcess = monthlyBillRepository.getBillForRoomMonthYearSuspend(roomId, billYear, billMonth)
         var needsSave = false
 
         if (billToProcess == null) {
             needsSave = true
-            val rentForNewBill: Double = if (tenantForRequestedPeriod == null) {
-                0.0
-            } else {
-                var tempRent = roomEntity.rent
+            var rentForNewBill = 0.0
+            if (tenantForRequestedPeriod != null) {
+                rentForNewBill = roomEntity.rent // Start with full rent
                 val moveInCal = Calendar.getInstance().apply { timeInMillis = tenantForRequestedPeriod.moveInDate }
                 if (moveInCal.get(Calendar.YEAR) == billYear && (moveInCal.get(Calendar.MONTH) + 1) == billMonth && moveInCal.get(Calendar.DAY_OF_MONTH) > 1) {
                     val totalDaysInMonth = moveInCal.getActualMaximum(Calendar.DAY_OF_MONTH)
                     if (totalDaysInMonth > 0) {
                         val daysOccupied = totalDaysInMonth - moveInCal.get(Calendar.DAY_OF_MONTH) + 1
-                        tempRent = (roomEntity.rent / totalDaysInMonth.toDouble()) * daysOccupied.toDouble()
+                        rentForNewBill = (roomEntity.rent / totalDaysInMonth.toDouble()) * daysOccupied.toDouble()
                     }
                 }
-                tempRent // Assign the calculated rent to rentForNewBill
             }
-            
-            billToProcess = if (tenantForRequestedPeriod == null) {
-                MonthlyBillEntity( 
-                    roomId = roomId, year = billYear, month = billMonth,
-                    tenantIdAtBillingTime = null, tenantNameAtBillingTime = "Not Occupied",
-                    rentAtBillingTime = rentForNewBill, electricityRateAtBillingTime = roomEntity.electricityRatePerUnit,
-                    previousMonthDues = 0.0, 
-                    dueDate = defaultDueDateCalendar.timeInMillis, isInitialReadingRolledOver = false
-                )
-            } else {
-                MonthlyBillEntity( 
-                    roomId = roomId, year = billYear, month = billMonth,
-                    tenantIdAtBillingTime = tenantForRequestedPeriod.id, tenantNameAtBillingTime = tenantForRequestedPeriod.name,
-                    rentAtBillingTime = rentForNewBill, electricityRateAtBillingTime = roomEntity.electricityRatePerUnit,
-                    previousMonthDues = calculatedPreviousMonthDues,
-                    dueDate = defaultDueDateCalendar.timeInMillis, isInitialReadingRolledOver = false
-                )
-            }
+            val defaultDueDateCalendar = Calendar.getInstance().apply { set(billYear, billMonth - 1, 5) }
+            billToProcess = MonthlyBillEntity(
+                roomId = roomId, year = billYear, month = billMonth,
+                tenantIdAtBillingTime = tenantForRequestedPeriod?.id,
+                tenantNameAtBillingTime = tenantForRequestedPeriod?.name ?: "Not Occupied",
+                rentAtBillingTime = rentForNewBill,
+                isFullRentAppliedOverride = null, // New bills start with null, dialog will determine
+                electricityRateAtBillingTime = roomEntity.electricityRatePerUnit,
+                previousMonthDues = calculatedPreviousMonthDues, // Dues calculated based on tenant context
+                dueDate = defaultDueDateCalendar.timeInMillis,
+                isInitialReadingRolledOver = false
+            )
         } else {
-            val expectedTenantId = tenantForRequestedPeriod?.id
-            val expectedTenantName = tenantForRequestedPeriod?.name ?: "Not Occupied"
-            var expectedRent = billToProcess.rentAtBillingTime
-            var tenantOrRentChanged = false
+            // Bill EXISTS. Check if tenant or previous dues changed.
+            // Rent and isFullRentAppliedOverride should NOT change here unless tenant changed.
+            var updatedRentAtBillingTime = billToProcess.rentAtBillingTime
+            var updatedIsFullRentAppliedOverride = billToProcess.isFullRentAppliedOverride
 
-            if (billToProcess.tenantIdAtBillingTime != expectedTenantId || billToProcess.tenantNameAtBillingTime != expectedTenantName) {
-                tenantOrRentChanged = true
+            val tenantActuallyChanged = (billToProcess.tenantIdAtBillingTime != tenantForRequestedPeriod?.id) || 
+                                      (billToProcess.tenantNameAtBillingTime != (tenantForRequestedPeriod?.name ?: "Not Occupied"))
+
+            if (tenantActuallyChanged) {
+                needsSave = true
                 if (tenantForRequestedPeriod != null) {
-                    expectedRent = roomEntity.rent 
+                    updatedRentAtBillingTime = roomEntity.rent // Default to full for new tenant context
                     val moveInCal = Calendar.getInstance().apply { timeInMillis = tenantForRequestedPeriod.moveInDate }
                     if (moveInCal.get(Calendar.YEAR) == billYear && (moveInCal.get(Calendar.MONTH) + 1) == billMonth && moveInCal.get(Calendar.DAY_OF_MONTH) > 1) {
                         val totalDaysInMonth = moveInCal.getActualMaximum(Calendar.DAY_OF_MONTH)
                         if (totalDaysInMonth > 0) {
                             val daysOccupied = totalDaysInMonth - moveInCal.get(Calendar.DAY_OF_MONTH) + 1
-                            expectedRent = (roomEntity.rent / totalDaysInMonth.toDouble()) * daysOccupied.toDouble()
+                            updatedRentAtBillingTime = (roomEntity.rent / totalDaysInMonth.toDouble()) * daysOccupied.toDouble()
                         }
                     }
                 } else {
-                    expectedRent = 0.0
+                    updatedRentAtBillingTime = 0.0 // No tenant, no rent
                 }
-            } else if (tenantForRequestedPeriod != null) { 
-                val moveInCal = Calendar.getInstance().apply { timeInMillis = tenantForRequestedPeriod.moveInDate }
-                if (moveInCal.get(Calendar.YEAR) == billYear && (moveInCal.get(Calendar.MONTH) + 1) == billMonth && moveInCal.get(Calendar.DAY_OF_MONTH) > 1) {
-                    val proRataRent = (roomEntity.rent / moveInCal.getActualMaximum(Calendar.DAY_OF_MONTH).toDouble()) * (moveInCal.getActualMaximum(Calendar.DAY_OF_MONTH) - moveInCal.get(Calendar.DAY_OF_MONTH) + 1).toDouble()
-                    if (abs(billToProcess.rentAtBillingTime - proRataRent) > 0.001) {
-                        expectedRent = proRataRent
-                        tenantOrRentChanged = true
-                    }
-                } else { 
-                    if (abs(billToProcess.rentAtBillingTime - roomEntity.rent) > 0.001) {
-                        expectedRent = roomEntity.rent
-                        tenantOrRentChanged = true
-                    }
-                }
+                updatedIsFullRentAppliedOverride = null // Reset for new tenant context, dialog re-evaluates
+            }
+            // Always check if previous dues need update, regardless of tenant change
+            if (abs((billToProcess.previousMonthDues ?: 0.0) - calculatedPreviousMonthDues) > 0.001) {
+                needsSave = true
+            }
+            // Also, ensure electricity rate is current if it was null (e.g. old bill)
+            if (billToProcess.electricityRateAtBillingTime == null && roomEntity.electricityRatePerUnit > 0) {
+                needsSave = true
             }
 
-            if (tenantOrRentChanged || abs((billToProcess.previousMonthDues ?: 0.0) - calculatedPreviousMonthDues) > 0.001) {
-                needsSave = true
-                billToProcess = billToProcess.copy( 
-                    tenantIdAtBillingTime = expectedTenantId,
-                    tenantNameAtBillingTime = expectedTenantName,
-                    rentAtBillingTime = expectedRent,
+            if (needsSave) {
+                billToProcess = billToProcess.copy(
+                    tenantIdAtBillingTime = tenantForRequestedPeriod?.id,
+                    tenantNameAtBillingTime = tenantForRequestedPeriod?.name ?: "Not Occupied",
+                    rentAtBillingTime = updatedRentAtBillingTime, // Use the determined rent
+                    isFullRentAppliedOverride = updatedIsFullRentAppliedOverride, // Use the determined override flag
                     previousMonthDues = calculatedPreviousMonthDues,
                     electricityRateAtBillingTime = billToProcess.electricityRateAtBillingTime ?: roomEntity.electricityRatePerUnit
                 )
@@ -244,7 +233,7 @@ class RoomViewModel(
         }
 
         if (needsSave) {
-            val savedBillId = saveBill(billToProcess)
+            saveBill(billToProcess) // Call the actual saveBill which handles meter rollover etc.
         }
         
         billToProcess.calculateTotalDue() 
@@ -254,6 +243,9 @@ class RoomViewModel(
     suspend fun saveBill(bill: MonthlyBillEntity): Long {
         val roomEntity = roomRepository.getRoomById(bill.roomId)
         var performRoomMeterRolloverThisSave = false
+
+        // The bill object here is exactly what the dialog or getOrCreateBillForRoom decided it should be
+        // regarding rentAtBillingTime and isFullRentAppliedOverride.
 
         if (roomEntity != null && bill.tenantNameAtBillingTime != "Not Occupied") {
             if (bill.electricityUnits == null || !bill.isInitialReadingRolledOver) {
@@ -275,7 +267,12 @@ class RoomViewModel(
             bill.electricityRateAtBillingTime = bill.electricityRateAtBillingTime ?: roomEntity?.electricityRatePerUnit ?: 0.0
         }
         
+        // Copy the bill, potentially updating isInitialReadingRolledOver.
+        // All other fields, including rentAtBillingTime and isFullRentAppliedOverride from the input 'bill', are preserved.
         val billToSave = if (performRoomMeterRolloverThisSave) bill.copy(isInitialReadingRolledOver = true) else bill.copy()
+        
+        // This will use the rentAtBillingTime and other charges from billToSave to calculate total and set isFullyPaid.
+        // It does NOT modify rentAtBillingTime or isFullRentAppliedOverride itself.
         billToSave.calculateTotalDue() 
         
         val savedBillId = monthlyBillRepository.insertOrUpdateBill(billToSave)
@@ -294,8 +291,7 @@ class RoomViewModel(
         return tenantRepository.getAllTenantsForRoom(roomId)
     }
 
-    // Add this function to provide a Flow for a single bill by ID
     fun getBillByIdFlow(billId: Int): Flow<MonthlyBillEntity?> {
-        return monthlyBillRepository.getBillById(billId) // Using existing repository method
+        return monthlyBillRepository.getBillById(billId)
     }
 }

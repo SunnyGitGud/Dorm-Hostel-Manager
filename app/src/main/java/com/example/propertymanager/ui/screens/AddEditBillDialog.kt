@@ -48,7 +48,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.propertymanager.data.entities.MonthlyBillEntity
-import com.example.propertymanager.data.entities.PaymentInstallment // Added import
+import com.example.propertymanager.data.entities.PaymentInstallment
 import com.example.propertymanager.ui.viewmodel.RoomViewModel
 import com.example.propertymanager.utils.formatDate
 import kotlinx.coroutines.launch
@@ -59,13 +59,13 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 
-val PositiveGreenColor = Color(0xFF2E7D32) 
+val PositiveGreenColor = Color(0xFF2E7D32)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddEditBillDialog(
     bill: MonthlyBillEntity,
-    roomViewModel: RoomViewModel, 
+    roomViewModel: RoomViewModel,
     roomName: String,
     isCurrentActiveBill: Boolean,
     currentRoomInitialMeterReading: Double?,
@@ -74,10 +74,9 @@ fun AddEditBillDialog(
     onDismiss: () -> Unit,
     onSave: (MonthlyBillEntity) -> Unit
 ) {
-    val currentBillState = remember(bill, bill.id, bill.isFullRentAppliedOverride, bill.installments) {
+    val currentBillState = remember(bill, bill.id) { // Removed bill.isFullRentAppliedOverride, bill.installments from key for initial state
         mutableStateOf(bill.copy().apply {
-            // Ensure the passed bill's installments are copied to the mutable state
-            installments = bill.installments
+            installments = bill.installments // Ensure installments are part of the initial copy
         })
     }
 
@@ -85,7 +84,8 @@ fun AddEditBillDialog(
         bill.rentAtBillingTime
     }
 
-    var applyFullRentOverride by remember(bill, bill.id, bill.isFullRentAppliedOverride) {
+    // Checkbox state, initialized based on the original bill's override flag OR defaults to false if it's the first time (null)
+    var applyFullRentOverride by remember(bill.id, bill.isFullRentAppliedOverride) {
         mutableStateOf(bill.isFullRentAppliedOverride ?: false)
     }
 
@@ -101,8 +101,13 @@ fun AddEditBillDialog(
         bill.tenantIdAtBillingTime != null
     }
 
-    val showFullRentOverrideCheckbox = remember(bill.id, isCurrentActiveBill, wasBillForOccupiedRoomInitially, initialRentForThisDialogInstance, fullRoomRent) {
-        isCurrentActiveBill && wasBillForOccupiedRoomInitially && (initialRentForThisDialogInstance < fullRoomRent - 0.001) && fullRoomRent > 0
+    // Corrected logic for showing the override checkbox
+    val showFullRentOverrideCheckbox = remember(bill.id, isCurrentActiveBill, wasBillForOccupiedRoomInitially, initialRentForThisDialogInstance, fullRoomRent, bill.isFullRentAppliedOverride) {
+        isCurrentActiveBill &&
+        wasBillForOccupiedRoomInitially &&
+        fullRoomRent > 0 &&
+        bill.isFullRentAppliedOverride == null && // IMPORTANT: Only show if no decision has been persisted yet
+        (initialRentForThisDialogInstance < fullRoomRent - 0.001) // And if current rent is less than full rent (pro-rata situation)
     }
 
     var monthEndMeterReadingString by remember(bill.id, bill.monthEndMeterReading, wasBillForOccupiedRoomInitially) {
@@ -121,7 +126,6 @@ fun AddEditBillDialog(
     var paymentAmountToRecord by remember { mutableStateOf("") }
     var paymentError by remember { mutableStateOf<String?>(null) }
     val keyboardController = LocalSoftwareKeyboardController.current
-    val scope = rememberCoroutineScope()
 
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
     val monthYearFormat = remember { SimpleDateFormat("MMMM yyyy", Locale.getDefault()) }
@@ -132,26 +136,42 @@ fun AddEditBillDialog(
     val installmentsToDisplay = currentBillState.value.installments
 
     LaunchedEffect(
-        bill, applyFullRentOverride, initialRentForThisDialogInstance, fullRoomRent,
-        monthEndMeterReadingString, waterBillString, otherChargesString, otherChargesDescription,
-        wasBillForOccupiedRoomInitially, isMeterReadingActuallyEditable,
-        currentRoomInitialMeterReading, currentRoomElectricityRate,
-        currentBillState.value.amountPaid, currentBillState.value.isInitialReadingRolledOver,
-        currentBillState.value.installments // Added installments to LaunchedEffect keys
+        applyFullRentOverride, // React to checkbox changes
+        initialRentForThisDialogInstance, fullRoomRent, // Constants for rent calculation
+        monthEndMeterReadingString, waterBillString, otherChargesString, otherChargesDescription, // User inputs
+        wasBillForOccupiedRoomInitially, isMeterReadingActuallyEditable, // Conditions
+        currentRoomInitialMeterReading, currentRoomElectricityRate, // For electricity calc
+        currentBillState.value.amountPaid, // React to payment changes (though payments directly update currentBillState)
+        currentBillState.value.installments, // React to installment changes
+        showFullRentOverrideCheckbox // React if checkbox visibility changes (though rare after init)
     ) {
-        val previousInstallments = currentBillState.value.installments
-        var tempBill = currentBillState.value.copy(
-            isFullRentAppliedOverride = applyFullRentOverride
-        )
-        tempBill.installments = previousInstallments // Preserve installments during these calculations
+        val previousInstallments = currentBillState.value.installments // Preserve current installments
+        
+        // 1. Determine the definitive override status for THIS calculation cycle
+        val definitiveIsFullRentAppliedOverride = if (showFullRentOverrideCheckbox) {
+            applyFullRentOverride // If checkbox is shown, its current state is the authority
+        } else {
+            // If checkbox not shown, it means a decision was already made (or not applicable).
+            // Use the original bill's persisted override status, defaulting to false if it was somehow null.
+            bill.isFullRentAppliedOverride ?: false 
+        }
 
-        val newRentToApply = if (showFullRentOverrideCheckbox && applyFullRentOverride) {
+        // 2. Determine the rent to apply based on the definitive override status
+        val newRentToApply = if (definitiveIsFullRentAppliedOverride) {
             fullRoomRent
         } else {
+            // If not overriding to full, use the rent the bill was loaded with initially.
+            // This correctly handles cases where pro-rata was applied and accepted, or full rent was already set.
             initialRentForThisDialogInstance
         }
-        tempBill = tempBill.copy(rentAtBillingTime = newRentToApply)
 
+        var tempBill = currentBillState.value.copy(
+            rentAtBillingTime = newRentToApply,
+            isFullRentAppliedOverride = definitiveIsFullRentAppliedOverride // Persist the definitive decision
+        )
+        tempBill.installments = previousInstallments // Re-apply installments
+
+        // Other bill calculations based on inputs
         if (wasBillForOccupiedRoomInitially) {
             tempBill = tempBill.copy(
                 waterBill = waterBillString.toDoubleOrNull() ?: 0.0,
@@ -173,7 +193,7 @@ fun AddEditBillDialog(
             } else {
                 tempBill = tempBill.copy(electricityUnits = 0.0, electricityRateAtBillingTime = currentRoomElectricityRate)
             }
-        } else {
+        } else { // If meter reading not editable, ensure original values are kept
             tempBill = tempBill.copy(
                 monthEndMeterReading = bill.monthEndMeterReading,
                 electricityUnits = bill.electricityUnits,
@@ -181,7 +201,7 @@ fun AddEditBillDialog(
             )
         }
 
-        tempBill.calculateTotalDue() // This might modify paymentDate based on installments
+        tempBill.calculateTotalDue() 
         currentBillState.value = tempBill
     }
 
@@ -295,10 +315,10 @@ fun AddEditBillDialog(
                                 
                                 val updatedBill = currentBillState.value.copy(
                                     amountPaid = newAmountPaid,
-                                    paymentDate = System.currentTimeMillis() // Update payment date to latest for this payment
+                                    paymentDate = System.currentTimeMillis() 
                                 )
-                                updatedBill.installments = newInstallmentsList // Set installments directly
-                                updatedBill.calculateTotalDue() // Recalculate total and isFullyPaid
+                                updatedBill.installments = newInstallmentsList 
+                                updatedBill.calculateTotalDue() 
                                 
                                 currentBillState.value = updatedBill
                                 
@@ -318,8 +338,7 @@ fun AddEditBillDialog(
         },
         confirmButton = {
             TextButton(onClick = { 
-                // Ensure calculateTotalDue is called before saving, especially if installments affected it.
-                currentBillState.value.calculateTotalDue()
+                currentBillState.value.calculateTotalDue() // Final calculation before save
                 onSave(currentBillState.value) 
             }) { Text("Save Bill Changes") }
         },
