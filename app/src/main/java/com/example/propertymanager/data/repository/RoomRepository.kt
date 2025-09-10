@@ -11,8 +11,8 @@ class RoomRepository(private val dao: RoomDao) {
         return dao.getRoomsForProperty(propertyId)
     }
 
-    suspend fun insert(room: RoomEntity) {
-        dao.insert(room)
+    suspend fun insert(room: RoomEntity): Long { // Changed return type to Long
+        return dao.insert(room)
     }
 
     suspend fun update(room: RoomEntity) { // New general update method
@@ -35,5 +35,10 @@ class RoomRepository(private val dao: RoomDao) {
     // Added method to update the hidden status of a room
     suspend fun updateRoomHiddenStatus(roomId: Int, isHidden: Boolean) {
         dao.updateRoomHiddenStatus(roomId, isHidden)
+    }
+
+    // Added for import functionality
+    suspend fun getByNameAndPropertyId(name: String, propertyId: Int): RoomEntity? {
+        return dao.getByNameAndPropertyId(name, propertyId)
     }
 }

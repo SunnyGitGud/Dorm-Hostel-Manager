@@ -43,6 +43,13 @@ interface TenantDao {
     @Query("SELECT * FROM tenants WHERE id = :tenantId LIMIT 1") // Added this method
     suspend fun getTenantById(tenantId: Int): TenantEntity?
 
+    // Added for import functionality
+    @Query("SELECT * FROM tenants WHERE name = :name AND roomId = :roomId AND moveOutDate IS NULL LIMIT 1")
+    suspend fun getTenantByNameAndRoomId(name: String, roomId: Int): TenantEntity?
+
+    @Query("SELECT * FROM tenants WHERE name = :name ORDER BY moveInDate DESC LIMIT 1")
+    suspend fun getByName(name: String): TenantEntity?
+
     // Optional: If you need to delete a specific tenant instance
     // @Delete
     // suspend fun deleteTenant(tenant: TenantEntity): Int

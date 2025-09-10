@@ -7,8 +7,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface RoomDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(room: RoomEntity)
+    @Insert(onConflict = OnConflictStrategy.IGNORE) // Using IGNORE for consistency, changed return type
+    suspend fun insert(room: RoomEntity): Long
 
     @Update
     suspend fun update(room: RoomEntity)
@@ -30,4 +30,8 @@ interface RoomDao {
     // Added method to update the isHidden status of a room
     @Query("UPDATE rooms SET isHidden = :isHidden WHERE id = :roomId")
     suspend fun updateRoomHiddenStatus(roomId: Int, isHidden: Boolean)
+
+    // Added for import functionality
+    @Query("SELECT * FROM rooms WHERE name = :name AND propertyId = :propertyId LIMIT 1")
+    suspend fun getByNameAndPropertyId(name: String, propertyId: Int): RoomEntity?
 }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Input // For Import
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong // Added for AutoMirrored version
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircleOutline // For Advance
@@ -66,6 +67,8 @@ import androidx.compose.ui.unit.dp
 import com.example.propertymanager.data.entities.PropertyEntity
 import com.example.propertymanager.ui.viewmodel.PropertyFinancialSummary
 import com.example.propertymanager.ui.viewmodel.PropertyViewModel
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.text.NumberFormat
 import java.util.Calendar
@@ -110,6 +113,7 @@ fun PropertyScreen(
     val propertyRoomSummariesValue by viewModel.propertyRoomSummaries.collectAsState()
     val exportCsvData by viewModel.exportCsvData.collectAsState()
     val exportTextData by viewModel.exportTextData.collectAsState() // Observe new text data
+    val importStatus by viewModel.importStatus.collectAsState()
 
     var showAddPropertyDialog by remember { mutableStateOf(false) }
     var selectedPropertyForOptions by remember { mutableStateOf<PropertyEntity?>(null) }
@@ -157,6 +161,23 @@ fun PropertyScreen(
         viewModel.clearExportTextData() // Clear text data
     }
 
+    val importCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            try {
+                context.contentResolver.openInputStream(it)?.use { inputStream ->
+                    BufferedReader(InputStreamReader(inputStream)).use { reader ->
+                        val content = reader.readText()
+                        viewModel.importCsvData(content)
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error importing CSV: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     LaunchedEffect(exportCsvData) {
         exportCsvData?.let {
             if (it.isNotBlank()) {
@@ -175,11 +196,21 @@ fun PropertyScreen(
         }
     }
 
+    LaunchedEffect(importStatus) {
+        importStatus?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            viewModel.clearImportStatus() // Reset status after showing toast
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Properties") },
                 actions = {
+                    IconButton(onClick = { importCsvLauncher.launch(arrayOf("text/csv", "text/plain")) }) { // Changed to text/csv, text/plain
+                        Icon(Icons.AutoMirrored.Filled.Input, contentDescription = "Import CSV")
+                    }
                     IconButton(onClick = { showExportDialog = true }) {
                         Icon(Icons.Filled.Share, contentDescription = "Export Data")
                     }
@@ -269,7 +300,7 @@ fun ExportDataDialog(
 
     var yearText by remember { mutableStateOf(currentYear.toString()) }
     var monthText by remember { mutableStateOf(currentMonth.toString()) }
-    var yearError by remember { mutableStateOf<String?>(null) }
+    var yearError by remember { mutableStateOf<String?>(null) } 
     var monthError by remember { mutableStateOf<String?>(null) }
     var selectedFormat by remember { mutableStateOf(ExportFormat.CSV) }
     var selectedScope by remember { mutableStateOf(ExportScope.SpecificMonth) } // New state for scope

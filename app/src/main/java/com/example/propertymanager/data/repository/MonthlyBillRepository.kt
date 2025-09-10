@@ -32,7 +32,7 @@ class MonthlyBillRepository(private val monthlyBillDao: MonthlyBillDao) {
         return monthlyBillDao.getBillForRoomMonthYearSuspend(roomId, year, month)
     }
 
-    suspend fun insertOrUpdateBill(bill: MonthlyBillEntity): Long {
+    suspend fun upsertBill(bill: MonthlyBillEntity): Long { // Renamed from insertOrUpdateBill
         // Ensure total is calculated before saving
         bill.calculateTotalDue()
         return monthlyBillDao.insertOrUpdate(bill)

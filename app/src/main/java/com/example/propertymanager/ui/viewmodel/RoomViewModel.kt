@@ -406,7 +406,7 @@ class RoomViewModel(
         // Crucially, calculateTotalDue is called here, which applies ceil() to totalAmountDue
         billToSave.calculateTotalDue()
         
-        val savedBillId = monthlyBillRepository.insertOrUpdateBill(billToSave)
+        val savedBillId = monthlyBillRepository.upsertBill(billToSave) // Changed from insertOrUpdateBill
 
         if (savedBillId > 0) {
             val billIdInt = if (savedBillId > Int.MAX_VALUE) billToSave.id else savedBillId.toInt() // Use existing ID if it's an update
@@ -459,7 +459,7 @@ class RoomViewModel(
         return tenantRepository.getAllTenantsForRoom(roomId)
     }
 
-    fun getBillByIdFlow(billId: Int): Flow<MonthlyBillEntity?> {
+    fun getBillByIdFlow(billId: Int): Flow<MonthlyBillEntity?> { // Changed return type here
         return monthlyBillRepository.getBillById(billId).map { bill ->
             bill?.let {
                 val roomEntity = roomRepository.getRoomById(it.roomId) 

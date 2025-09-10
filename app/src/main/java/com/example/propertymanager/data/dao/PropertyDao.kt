@@ -10,8 +10,11 @@ interface PropertyDao {
     @Query("SELECT * FROM properties WHERE isHidden = 0") 
     fun getAllProperties(): Flow<List<PropertyEntity>>
 
-    @Insert
-    suspend fun insert(property: PropertyEntity)
+    @Query("SELECT * FROM properties WHERE name = :name LIMIT 1")
+    suspend fun getByName(name: String): PropertyEntity? // Added this method
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE) // Added onConflict strategy, typical for inserts returning Long
+    suspend fun insert(property: PropertyEntity): Long // Changed return type to Long
 
     @Delete
     suspend fun delete(property: PropertyEntity)

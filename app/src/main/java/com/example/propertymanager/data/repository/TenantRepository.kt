@@ -42,6 +42,15 @@ class TenantRepository(private val tenantDao: TenantDao) {
         return false // Tenant not found or update failed
     }
 
+    // Added for import functionality
+    suspend fun getTenantByNameAndRoomId(name: String, roomId: Int): TenantEntity? {
+        return tenantDao.getTenantByNameAndRoomId(name, roomId)
+    }
+
+    suspend fun getByName(name: String): TenantEntity? {
+        return tenantDao.getByName(name)
+    }
+
     // The old `getTenantForRoom` is effectively replaced by `getCurrentTenantForRoom`.
     // The old `removeTenantFromRoom` which called a broad delete is intentionally removed.
     // Tenant "removal" is now handled by setting a moveOutDate.
