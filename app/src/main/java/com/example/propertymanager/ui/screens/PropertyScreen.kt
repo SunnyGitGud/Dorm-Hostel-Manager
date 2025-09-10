@@ -1,6 +1,6 @@
 package com.example.propertymanager.ui.screens
 
-import androidx.compose.foundation.gestures.detectTapGestures // Added import
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,8 +30,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput // Added import
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.input.pointer.pointerInput
+// Removed FontWeight import as it's no longer explicitly used in PropertyItem
 import androidx.compose.ui.unit.dp
 import com.example.propertymanager.data.entities.PropertyEntity
 import com.example.propertymanager.ui.viewmodel.PropertyViewModel
@@ -49,7 +49,6 @@ fun PropertyScreen(
     val propertyFinancialSummaries by viewModel.propertyFinancialSummaries.collectAsState()
     var showAddPropertyDialog by remember { mutableStateOf(false) }
 
-    // State for long-press options dialog
     var selectedPropertyForOptions by remember { mutableStateOf<PropertyEntity?>(null) }
     var showPropertyOptionsDialog by remember { mutableStateOf(false) }
 
@@ -66,7 +65,7 @@ fun PropertyScreen(
         LazyColumn(
             modifier = Modifier
                 .padding(innerPadding)
-                .padding(16.dp)
+                .padding(16.dp) // Overall padding for the list
         ) {
             if (properties.isEmpty()) {
                 item {
@@ -78,12 +77,12 @@ fun PropertyScreen(
                         property = property,
                         financialSummary = propertyFinancialSummaries[property.id],
                         onClick = { onPropertyClick(property.id) },
-                        onLongClick = { // Added onLongClick
+                        onLongClick = { 
                             selectedPropertyForOptions = property
                             showPropertyOptionsDialog = true
                         }
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp)) // Increased spacing between cards
                 }
             }
         }
@@ -98,7 +97,6 @@ fun PropertyScreen(
             )
         }
 
-        // Show property options dialog
         if (showPropertyOptionsDialog && selectedPropertyForOptions != null) {
             PropertyOptionsDialog(
                 property = selectedPropertyForOptions!!,
@@ -112,41 +110,56 @@ fun PropertyScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class) 
 @Composable
 fun PropertyItem(
     property: PropertyEntity,
     financialSummary: PropertyFinancialSummary?,
     onClick: () -> Unit,
-    onLongClick: () -> Unit // Added onLongClick parameter
+    onLongClick: () -> Unit
 ) {
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .pointerInput(Unit) { // Added pointerInput for long press
+            .pointerInput(Unit) { 
                 detectTapGestures(
                     onLongPress = { onLongClick() },
-                    onTap = { onClick() } // Ensure regular click still works
+                    onTap = { onClick() } 
                 )
             },
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        // onClick = onClick // onClick is now handled by detectTapGestures
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), // Slightly increased elevation
+        shape = MaterialTheme.shapes.medium // Using a predefined shape
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = property.name, style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(text = property.address, style = MaterialTheme.typography.bodySmall)
+        Column(modifier = Modifier.padding(16.dp)) { // Standard padding inside card
+            Text(
+                text = property.name, 
+                style = MaterialTheme.typography.titleLarge // Increased font size for name
+            )
+            Spacer(modifier = Modifier.height(6.dp)) // Increased spacer
+            Text(
+                text = property.address, 
+                style = MaterialTheme.typography.bodyMedium // Increased font size for address
+            )
             
             financialSummary?.let {
-                if (it.totalDue > 0.001) {
-                    Spacer(modifier = Modifier.height(6.dp))
+                // Check against 0 as totalDue is now ceil-ed Double (e.g. 106.0)
+                if (it.totalDue > 0) { 
+                    Spacer(modifier = Modifier.height(8.dp)) // Increased spacer
                     Text(
                         text = "Total Due: ${currencyFormat.format(it.totalDue)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFB00020) 
+                        style = MaterialTheme.typography.titleSmall, // Larger and bolder style for due amount
+                        color = MaterialTheme.colorScheme.error // Retain error color for due
+                    )
+                }
+                 // Optionally display totalAdvance as well if needed, with similar styling
+                if (it.totalAdvance > 0) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Total Advance: ${currencyFormat.format(it.totalAdvance)}",
+                        style = MaterialTheme.typography.titleSmall, // Consistent styling for financial summaries
+                        color = Color(0xFF2E7D32) // PositiveGreenColor or similar for advance
                     )
                 }
             }
@@ -223,7 +236,6 @@ fun AddPropertyDialog(
     )
 }
 
-// New composable for property options dialog
 @Composable
 fun PropertyOptionsDialog(
     property: PropertyEntity,
@@ -255,6 +267,6 @@ fun PropertyOptionsDialog(
                 Text("Cancel")
             }
         },
-        dismissButton = null // No separate dismiss button, Cancel in text acts as one
+        dismissButton = null
     )
 }
