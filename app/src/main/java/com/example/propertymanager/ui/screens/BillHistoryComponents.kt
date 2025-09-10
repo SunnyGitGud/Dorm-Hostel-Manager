@@ -41,7 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+// import androidx.compose.ui.graphics.Color // Removed local PositiveGreenColor definition
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -58,7 +58,7 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 
-val PositiveGreenColor = Color(0xFF388E3C) // A Material Design like green
+// PositiveGreenColor is now defined in AddEditBillDialog.kt in the same package
 
 // Helper function to format a list of bills for sharing
 internal fun formatBillHistoryForSharing(

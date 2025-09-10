@@ -26,7 +26,7 @@ import com.example.propertymanager.data.entities.TenantEntity
         MonthlyBillEntity::class,
         PaymentEntity::class
     ],
-    version = 5, // Incremented version from 4 to 5
+    version = 6, // Incremented version from 5 to 6
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -58,12 +58,18 @@ abstract class PropertyManagerDatabase : RoomDatabase() {
             }
         }
 
-        // Migration from version 4 to 5
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Add new column to 'monthly_bills' table for tracking rollover status
-                // SQLite uses INTEGER for booleans (0 for false, 1 for true)
                 db.execSQL("ALTER TABLE monthly_bills ADD COLUMN isInitialReadingRolledOver INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        // Migration from version 5 to 6
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Add new column to 'monthly_bills' table for storing full rent override checkbox state
+                // SQLite uses INTEGER for booleans (0 for false, 1 for true). Field is nullable.
+                db.execSQL("ALTER TABLE monthly_bills ADD COLUMN isFullRentAppliedOverride INTEGER")
             }
         }
 
@@ -74,7 +80,7 @@ abstract class PropertyManagerDatabase : RoomDatabase() {
                     PropertyManagerDatabase::class.java,
                     "property_manager_database"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5) // Add the new MIGRATION_4_5
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6) // Add the new MIGRATION_5_6
                     .build()
                 INSTANCE = instance
                 instance

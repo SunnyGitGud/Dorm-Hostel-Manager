@@ -53,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -93,9 +94,15 @@ fun RoomDetailsScreen(
         roomsWithTenants.find { it.room.id == roomId }
     }
 
-    var showAddEditBillDialog by remember { mutableStateOf(false) }
-    var currentBillToEdit by remember { mutableStateOf<MonthlyBillEntity?>(null) }
-    var openedBillIsCurrentActive by remember { mutableStateOf(false) } // New state
+    var billIdForDialog by remember { mutableStateOf<Int?>(null) }
+    val billToEditInDialog: MonthlyBillEntity? by key(billIdForDialog) {
+        if (billIdForDialog != null) {
+            // You will need to add getBillByIdFlow to your RoomViewModel and Repository
+            roomViewModel.getBillByIdFlow(billIdForDialog!!).collectAsState(initial = null)
+        } else {
+            remember { mutableStateOf(null) }
+        }
+    }
 
     var showBillHistoryDialog by remember { mutableStateOf(false) }
     var billHistoryList by remember { mutableStateOf<List<MonthlyBillEntity>>(emptyList()) }
@@ -106,7 +113,7 @@ fun RoomDetailsScreen(
 
     var showTenantInfoDialog by remember { mutableStateOf(false) }
     var showEditRoomDialog by remember { mutableStateOf(false) }
-    var currentMonthEndReadingForDialog by remember { mutableStateOf<Double?>(null) }
+    var currentMonthEndReadingForDialog by remember { mutableStateOf<Double?>(null) } 
 
     var textToShare by remember { mutableStateOf("") }
 
@@ -132,16 +139,16 @@ fun RoomDetailsScreen(
                         IconButton(onClick = {
                             coroutineScope.launch {
                                 val calendar = Calendar.getInstance()
-                                val yearValue = calendar.get(Calendar.YEAR)
-                                val monthValue = calendar.get(Calendar.MONTH) + 1
+                                val year = calendar.get(Calendar.YEAR)
+                                val month = calendar.get(Calendar.MONTH) + 1
 
                                 val billForCurrentMonth = roomViewModel.getOrCreateBillForRoom(
                                     roomId = currentRoomWithTenant.room.id,
-                                    billYear = yearValue,     // Corrected
-                                    billMonth = monthValue,   // Corrected
-                                    currentRoomFullRent = currentRoomWithTenant.room.rent
+                                    billYear = year, // Corrected parameter name
+                                    billMonth = month, // Corrected parameter name
+                                    currentRoomFullRent = currentRoomWithTenant.room.rent // Corrected parameter name
                                 )
-                                if (billForCurrentMonth.id != 0 && billForCurrentMonth.year == yearValue && billForCurrentMonth.month == monthValue) {
+                                if (billForCurrentMonth.id != 0 && billForCurrentMonth.year == year && billForCurrentMonth.month == month) {
                                     currentMonthEndReadingForDialog = billForCurrentMonth.monthEndMeterReading
                                 } else {
                                     currentMonthEndReadingForDialog = null
@@ -172,16 +179,15 @@ fun RoomDetailsScreen(
                     onClick = {
                         coroutineScope.launch {
                             val calendar = Calendar.getInstance()
-                            val yearValue = calendar.get(Calendar.YEAR)
-                            val monthValue = calendar.get(Calendar.MONTH) + 1
-                            currentBillToEdit = roomViewModel.getOrCreateBillForRoom(
+                            val year = calendar.get(Calendar.YEAR)
+                            val month = calendar.get(Calendar.MONTH) + 1
+                            val bill = roomViewModel.getOrCreateBillForRoom(
                                 roomId = currentRoomWithTenant.room.id,
-                                billYear = yearValue,     // Corrected
-                                billMonth = monthValue,   // Corrected
-                                currentRoomFullRent = currentRoomWithTenant.room.rent
+                                billYear = year, // Corrected parameter name
+                                billMonth = month, // Corrected parameter name
+                                currentRoomFullRent = currentRoomWithTenant.room.rent // Corrected parameter name
                             )
-                            openedBillIsCurrentActive = true // This is the current active bill
-                            showAddEditBillDialog = true
+                            billIdForDialog = bill.id // Set the ID to trigger dialog display
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -216,7 +222,7 @@ fun RoomDetailsScreen(
                     onClick = {
                         if (allTenantsForRoom.isEmpty() && currentRoomWithTenant != null) {
                              coroutineScope.launch {
-                                allTenantsForRoom = roomViewModel.getAllTenantsForRoomFlow(roomId).firstOrNull() ?: emptyList() // Corrected
+                                allTenantsForRoom = roomViewModel.getAllTenantsForRoomFlow(roomId).firstOrNull() ?: emptyList()
                              }
                         }
                         showTenantInfoDialog = true
@@ -229,29 +235,28 @@ fun RoomDetailsScreen(
             }
         }
 
-        if (showAddEditBillDialog && currentBillToEdit != null && currentRoomWithTenant != null) {
-            var billInDialog by remember(currentBillToEdit) { mutableStateOf(currentBillToEdit!!) }
+        if (billToEditInDialog != null && currentRoomWithTenant != null) {
+            val calendar = Calendar.getInstance()
+            val currentYear = calendar.get(Calendar.YEAR)
+            val currentMonth = calendar.get(Calendar.MONTH) + 1
+            val openedBillIsCurrentActive = billToEditInDialog!!.year == currentYear && billToEditInDialog!!.month == currentMonth
+
             AddEditBillDialog(
-                bill = billInDialog,
+                bill = billToEditInDialog!!,
+                roomViewModel = roomViewModel, // Added missing roomViewModel parameter
                 roomName = currentRoomWithTenant.room.name,
                 isCurrentActiveBill = openedBillIsCurrentActive,
                 currentRoomInitialMeterReading = currentRoomWithTenant.room.initialMeterReading,
                 currentRoomElectricityRate = currentRoomWithTenant.room.electricityRatePerUnit,
-                fullRoomRent = currentRoomWithTenant.room.rent, // Pass the full room rent
+                fullRoomRent = currentRoomWithTenant.room.rent,
                 onDismiss = {
-                    showAddEditBillDialog = false
-                    currentBillToEdit = null
-                    openedBillIsCurrentActive = false // Reset flag
+                    billIdForDialog = null 
                 },
-                onBillUpdated = { updatedBill ->
-                    billInDialog = updatedBill
-                },
+                // onBillUpdated was removed from AddEditBillDialog
                 onSave = {
                     coroutineScope.launch {
                         roomViewModel.saveBill(it)
-                        showAddEditBillDialog = false
-                        currentBillToEdit = null
-                        openedBillIsCurrentActive = false // Reset flag
+                        billIdForDialog = null 
                     }
                 }
             )
@@ -285,11 +290,10 @@ fun RoomDetailsScreen(
                 onShareClicked = { formattedText ->
                     textToShare = formattedText
                 },
-                onBillSelected = { selectedBill ->
-                    currentBillToEdit = selectedBill
-                    openedBillIsCurrentActive = false // This is a historical bill
-                    showBillHistoryDialog = false
-                    showAddEditBillDialog = true
+                onBillSelected = { bill ->
+                    // Handle bill selection from history, e.g., open for editing or viewing details
+                    billIdForDialog = bill.id // Example: Open AddEditBillDialog for the selected historical bill
+                    showBillHistoryDialog = false // Dismiss history dialog
                 }
             )
         }
@@ -307,7 +311,7 @@ fun RoomDetailsScreen(
         if (showEditRoomDialog && currentRoomWithTenant?.room != null) {
             EditRoomDetailsDialog(
                 room = currentRoomWithTenant.room,
-                currentMonthEndReadingForDisplay = currentMonthEndReadingForDialog,
+                currentMonthEndReadingForDisplay = currentMonthEndReadingForDialog, 
                 onDismiss = { showEditRoomDialog = false },
                 onSave = { updatedRoom ->
                     roomViewModel.updateRoomDetails(updatedRoom)

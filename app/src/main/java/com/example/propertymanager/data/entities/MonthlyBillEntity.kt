@@ -2,8 +2,15 @@ package com.example.propertymanager.data.entities
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Ignore
 import androidx.room.Index
 import androidx.room.PrimaryKey
+
+// Define PaymentInstallment as a separate data class (can be in the same file)
+data class PaymentInstallment(
+    val amount: Double,
+    val date: Long // Timestamp of the payment
+)
 
 @Entity(
     tableName = "monthly_bills",
@@ -30,13 +37,13 @@ data class MonthlyBillEntity(
     var tenantNameAtBillingTime: String? = null,
 
     var rentAtBillingTime: Double = 0.0,
+    var isFullRentAppliedOverride: Boolean? = null,
 
-    // Fields for electricity calculation
-    var monthEndMeterReading: Double? = null,      // Month end meter reading input by user
-    var electricityUnits: Double? = null,          // Calculated as (monthEndMeterReading - initialMeterReading from RoomEntity)
-    var electricityRateAtBillingTime: Double? = null, // Rate at the time of bill generation, from RoomEntity
+    var monthEndMeterReading: Double? = null,
+    var electricityUnits: Double? = null,
+    var electricityRateAtBillingTime: Double? = null,
 
-    var electricityBill: Double = 0.0, // This will store the calculated (units * rate)
+    var electricityBill: Double = 0.0,
     var waterBill: Double = 0.0,
     var otherCharges: Double = 0.0,
     var otherChargesDescription: String? = null,
@@ -44,20 +51,33 @@ data class MonthlyBillEntity(
 
     var totalAmountDue: Double = 0.0,
     var amountPaid: Double = 0.0,
-    var dueDate: Long = 0L, // Timestamp
-    var paymentDate: Long? = null, // Timestamp, null if not fully paid
+    var dueDate: Long = 0L,
+    var paymentDate: Long? = null,
     var isFullyPaid: Boolean = false,
-    var isInitialReadingRolledOver: Boolean = false // Ensures this field is present
+    var isInitialReadingRolledOver: Boolean = false
+    // installments is removed from primary constructor
 ) {
+    @Ignore // Room will ignore this field. Persistence requires a TypeConverter.
+    var installments: List<PaymentInstallment> = emptyList()
+
     fun calculateTotalDue() {
-        // electricityUnits and electricityRateAtBillingTime should be set by the ViewModel before this is called.
         electricityBill = (electricityUnits ?: 0.0) * (electricityRateAtBillingTime ?: 0.0)
         
-        // Calculate total amount due
         totalAmountDue = rentAtBillingTime +
                          electricityBill +
                          waterBill +
                          otherCharges +
                          previousMonthDues
+
+        isFullyPaid = amountPaid >= totalAmountDue - 0.001 
+        if (!isFullyPaid) {
+            // paymentDate on the bill might represent the date the bill became fully paid.
+        } else {
+            if (paymentDate == null && amountPaid > 0) {
+                paymentDate = installments.maxOfOrNull { it.date } ?: System.currentTimeMillis()
+            } else if (amountPaid == 0.0 && totalAmountDue == 0.0) {
+                paymentDate = paymentDate ?: System.currentTimeMillis()
+            }
+        }
     }
 }

@@ -293,4 +293,9 @@ class RoomViewModel(
     fun getAllTenantsForRoomFlow(roomId: Int): Flow<List<TenantEntity>> {
         return tenantRepository.getAllTenantsForRoom(roomId)
     }
+
+    // Add this function to provide a Flow for a single bill by ID
+    fun getBillByIdFlow(billId: Int): Flow<MonthlyBillEntity?> {
+        return monthlyBillRepository.getBillById(billId) // Using existing repository method
+    }
 }
