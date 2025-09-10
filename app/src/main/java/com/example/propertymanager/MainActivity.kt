@@ -52,7 +52,8 @@ class MainActivity : ComponentActivity() {
             propertyRepository,
             roomRepository, 
             monthlyBillRepository, 
-            paymentInstallmentRepository
+            paymentInstallmentRepository,
+            tenantRepository // Added TenantRepository
         )
         propertyViewModel = ViewModelProvider(this, propertyFactory)[PropertyViewModel::class.java]
 
