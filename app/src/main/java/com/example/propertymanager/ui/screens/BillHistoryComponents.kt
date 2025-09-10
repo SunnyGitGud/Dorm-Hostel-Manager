@@ -2,6 +2,8 @@ package com.example.propertymanager.ui.screens
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.History // Using History icon for installments
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -41,7 +44,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-// import androidx.compose.ui.graphics.Color // Removed local PositiveGreenColor definition
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -56,11 +58,9 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import kotlin.math.abs
-import kotlin.math.max
 
-// PositiveGreenColor is now defined in AddEditBillDialog.kt in the same package
+// PositiveGreenColor is defined in AddEditBillDialog.kt
 
-// Helper function to format a list of bills for sharing
 internal fun formatBillHistoryForSharing(
     bills: List<MonthlyBillEntity>,
     roomName: String,
@@ -124,20 +124,28 @@ internal fun formatBillHistoryForSharing(
             } else {
                 if (balance > 0.001) {
                     statusText = "Advance: ${currencyFormat.format(balance)}"
-                } else if (abs(balance) < 0.001) {
-                    statusText = "Paid" // Changed from "Cleared (Pending Confirmation)"
-                } else { // balance < 0
+                } else if (abs(balance) < 0.001 && bill.amountPaid > 0) {
+                    statusText = "Paid"
+                } else if (bill.totalAmountDue > 0 && bill.amountPaid == 0.0) {
+                    statusText = "Due: ${currencyFormat.format(bill.totalAmountDue)}"
+                } else { 
                     statusText = "Due: ${currencyFormat.format(abs(balance))}"
                 }
             }
             builder.append("Status: $statusText\n")
+            // Append Installment History
+            if (bill.installments.isNotEmpty()) {
+                builder.append("Payment Installments:\n")
+                bill.installments.forEach {
+                    builder.append("  - ${currencyFormat.format(it.amount)} on ${formatDate(it.date)}\n")
+                }
+            }
             builder.append("------------------------------------\n")
         }
     }
     return builder.toString()
 }
 
-// Helper function to format a single bill for sharing
 internal fun formatSingleBillForSharing(
     bill: MonthlyBillEntity,
     roomName: String,
@@ -187,13 +195,22 @@ internal fun formatSingleBillForSharing(
     } else {
         if (balance > 0.001) {
             statusText = "Advance: ${currencyFormat.format(balance)}"
-        } else if (abs(balance) < 0.001) {
-            statusText = "Paid" // Changed from "Cleared (Pending Confirmation)"
-        } else { // balance < 0
+        } else if (abs(balance) < 0.001 && bill.amountPaid > 0) {
+            statusText = "Paid"
+        } else if (bill.totalAmountDue > 0 && bill.amountPaid == 0.0){
+            statusText = "Due: ${currencyFormat.format(bill.totalAmountDue)}"
+        } else { 
             statusText = "Due: ${currencyFormat.format(abs(balance))}"
         }
     }
     builder.append("Status: $statusText\n")
+    // Append Installment History
+    if (bill.installments.isNotEmpty()) {
+        builder.append("Payment Installments:\n")
+        bill.installments.forEach {
+            builder.append("  - ${currencyFormat.format(it.amount)} on ${formatDate(it.date)}\n")
+        }
+    }
     return builder.toString()
 }
 
@@ -228,10 +245,10 @@ fun BillHistoryDialog(
     onDismiss: () -> Unit,
     onClearFilters: () -> Unit,
     onShareClicked: (String) -> Unit,
-    onBillSelected: (MonthlyBillEntity) -> Unit // New parameter
+    onBillSelected: (MonthlyBillEntity) -> Unit
 ) {
     val monthYearFormat = remember { SimpleDateFormat("MMMM yyyy", Locale.getDefault()) }
-    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("en", "IN")) }
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) } // Updated Locale
     val keyboardController = LocalSoftwareKeyboardController.current
 
     val filteredBills = remember(bills, filterYear, selectedTenantId) {
@@ -311,16 +328,16 @@ fun BillHistoryDialog(
                                 monthYearFormat = monthYearFormat,
                                 currencyFormat = currencyFormat,
                                 roomName = roomName,
-                                onShareThisBill = { billToShare ->
+                                onShareThisBill = {
                                     val singleBillText = formatSingleBillForSharing(
-                                        bill = billToShare,
+                                        bill = bill,
                                         roomName = roomName,
                                         monthYearFormat = monthYearFormat,
                                         currencyFormat = currencyFormat
                                     )
                                     onShareClicked(singleBillText)
                                 },
-                                onBillClick = { onBillSelected(bill) } // Call the new callback
+                                onBillClick = { onBillSelected(bill) }
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                         }
@@ -354,16 +371,17 @@ fun BillHistoryDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class) // Added OptIn for Card onClick
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BillHistoryItem(
     bill: MonthlyBillEntity,
     monthYearFormat: SimpleDateFormat,
     currencyFormat: NumberFormat,
-    roomName: String,
+    roomName: String, // Kept for consistency, though not used directly for share in this item
     onShareThisBill: (MonthlyBillEntity) -> Unit,
-    onBillClick: (MonthlyBillEntity) -> Unit // New parameter
+    onBillClick: (MonthlyBillEntity) -> Unit
 ) {
+    var showInstallments by remember { mutableStateOf(false) }
     val billPeriod = remember(bill.year, bill.month) {
         monthYearFormat.format(Calendar.getInstance().apply { set(bill.year, bill.month - 1, 1) }.time)
     }
@@ -374,7 +392,7 @@ fun BillHistoryItem(
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        onClick = { onBillClick(bill) } // Added onClick handler
+        onClick = { onBillClick(bill) } 
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -383,8 +401,13 @@ fun BillHistoryItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(billPeriod, style = MaterialTheme.typography.titleMedium)
-                IconButton(onClick = { onShareThisBill(bill) }) {
-                    Icon(Icons.Filled.Share, contentDescription = "Share this bill")
+                Row {
+                    IconButton(onClick = { showInstallments = !showInstallments }) {
+                        Icon(Icons.Filled.History, contentDescription = "View Payment Installments")
+                    }
+                    IconButton(onClick = { onShareThisBill(bill) }) {
+                        Icon(Icons.Filled.Share, contentDescription = "Share this bill")
+                    }
                 }
             }
             Text(
@@ -457,14 +480,22 @@ fun BillHistoryItem(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    abs(balance) < 0.001 -> {
+                    abs(balance) < 0.001 && bill.amountPaid > 0 -> {
                         Text(
-                            text = "Status: Paid", // Changed from "Status: Cleared (Pending Confirmation)"
+                            text = "Status: Paid",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    else -> { // balance < 0 (Dues)
+                     bill.totalAmountDue > 0 && bill.amountPaid == 0.0 -> { // Bill generated but no payment made yet
+                        Text(
+                            text = "Status: ${currencyFormat.format(bill.totalAmountDue)} Due",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    else -> { // Partial payment, balance < 0 (Dues)
                         Text(
                             text = "Status: ${currencyFormat.format(abs(balance))} Due",
                             color = MaterialTheme.colorScheme.error,
@@ -475,8 +506,29 @@ fun BillHistoryItem(
                 }
                 if(bill.paymentDate != null && bill.paymentDate != 0L && bill.amountPaid > 0) {
                     Text("Last Payment: ${formatDate(bill.paymentDate)}", style = MaterialTheme.typography.bodySmall)
-                } else if (bill.amountPaid > 0) {
+                } else if (bill.amountPaid > 0) { // Should ideally not happen if paymentDate is always set
                      Text("Last Payment: Date N/A", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            
+            // Display Payment Installments
+            AnimatedVisibility(visible = showInstallments) {
+                Column(modifier = Modifier.padding(top = 8.dp)) {
+                    HorizontalDivider(modifier = Modifier.padding(bottom = 6.dp))
+                    Text("Payment History:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    if (bill.installments.isNotEmpty()) {
+                        bill.installments.forEach { installment ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("- ${currencyFormat.format(installment.amount)}", style = MaterialTheme.typography.bodySmall)
+                                Text(formatDate(installment.date), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    } else {
+                        Text("No payment installments recorded for this bill.", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }

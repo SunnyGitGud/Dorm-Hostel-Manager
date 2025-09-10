@@ -15,6 +15,7 @@ import com.example.propertymanager.data.repository.PropertyRepository
 import com.example.propertymanager.data.repository.RoomRepository
 import com.example.propertymanager.data.repository.TenantRepository
 import com.example.propertymanager.data.repository.MonthlyBillRepository
+import com.example.propertymanager.data.repository.PaymentInstallmentRepository // Added import
 import com.example.propertymanager.ui.screens.PropertyScreen
 import com.example.propertymanager.ui.screens.RoomScreen
 import com.example.propertymanager.ui.screens.RoomDetailsScreen // Added import for RoomDetailsScreen
@@ -41,10 +42,12 @@ class MainActivity : ComponentActivity() {
         val roomDao = database.roomDao()
         val tenantDao = database.tenantDao()
         val monthlyBillDao = database.monthlyBillDao()
+        val paymentInstallmentDao = database.paymentInstallmentDao() // Added DAO
 
         val roomRepository = RoomRepository(roomDao)
         val tenantRepository = TenantRepository(tenantDao)
         val monthlyBillRepository = MonthlyBillRepository(monthlyBillDao)
+        val paymentInstallmentRepository = PaymentInstallmentRepository(paymentInstallmentDao) // Added Repository
 
         setContent {
             val navController = rememberNavController()
@@ -67,6 +70,7 @@ class MainActivity : ComponentActivity() {
                             roomRepository,
                             tenantRepository,
                             monthlyBillRepository,
+                            paymentInstallmentRepository, // Added repository
                             propertyId
                         )
                         val roomViewModel = ViewModelProvider(
@@ -98,6 +102,7 @@ class MainActivity : ComponentActivity() {
                             roomRepository,
                             tenantRepository,
                             monthlyBillRepository,
+                            paymentInstallmentRepository, // Added repository
                             propertyId // Use propertyId for the factory
                         )
                         // Get the ViewModel scoped to this propertyId
