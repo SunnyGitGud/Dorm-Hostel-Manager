@@ -208,7 +208,7 @@ fun PropertyScreen(
             TopAppBar(
                 title = { Text("Properties") },
                 actions = {
-                    IconButton(onClick = { importCsvLauncher.launch(arrayOf("text/csv", "text/plain")) }) { // Changed to text/csv, text/plain
+                    IconButton(onClick = { importCsvLauncher.launch(arrayOf("*/*")) }) { // Changed to text/csv, text/plain
                         Icon(Icons.AutoMirrored.Filled.Input, contentDescription = "Import CSV")
                     }
                     IconButton(onClick = { showExportDialog = true }) {
