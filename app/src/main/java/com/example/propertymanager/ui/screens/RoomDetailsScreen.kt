@@ -2,6 +2,7 @@ package com.example.propertymanager.ui.screens
 
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,10 +26,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.AttachMoney
+import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Payment
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Person
@@ -50,6 +55,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -60,18 +66,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.propertymanager.data.model.RoomWithTenant
 import com.example.propertymanager.data.entities.MonthlyBillEntity
 import com.example.propertymanager.data.entities.TenantEntity
 import com.example.propertymanager.ui.viewmodel.RoomViewModel
-import com.example.propertymanager.utils.formatDate // Import formatDate
+import com.example.propertymanager.utils.formatDate
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -94,15 +102,17 @@ fun RoomDetailsScreen(
         roomsWithTenants.find { it.room.id == roomId }
     }
 
+    // For AddEditBillDialog invocation
     var billIdForDialog by remember { mutableStateOf<Int?>(null) }
-    val billToEditInDialog: MonthlyBillEntity? by key(billIdForDialog) {
+    var directBillObjectForDialog by remember { mutableStateOf<MonthlyBillEntity?>(null) }
+    val billToEditInDialogViaId: MonthlyBillEntity? by key(billIdForDialog) {
         if (billIdForDialog != null) {
-            // You will need to add getBillByIdFlow to your RoomViewModel and Repository
             roomViewModel.getBillByIdFlow(billIdForDialog!!).collectAsState(initial = null)
         } else {
             remember { mutableStateOf(null) }
         }
     }
+    val finalBillForDialog = billToEditInDialogViaId ?: directBillObjectForDialog
 
     var showBillHistoryDialog by remember { mutableStateOf(false) }
     var billHistoryList by remember { mutableStateOf<List<MonthlyBillEntity>>(emptyList()) }
@@ -113,15 +123,31 @@ fun RoomDetailsScreen(
 
     var showTenantInfoDialog by remember { mutableStateOf(false) }
     var showEditRoomDialog by remember { mutableStateOf(false) }
-    var currentMonthEndReadingForDialog by remember { mutableStateOf<Double?>(null) } 
+    var currentMonthEndReadingForDialog by remember { mutableStateOf<Double?>(null) }
 
     var textToShare by remember { mutableStateOf("") }
 
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val currentCalendarMonthBill by roomViewModel.currentCalendarMonthBill.collectAsState()
+    val monthYearFormat = remember { SimpleDateFormat("MMMM yyyy", Locale.getDefault()) }
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) }
+    val shortDateFormat = remember { SimpleDateFormat("dd MMM yyyy", Locale.getDefault())}
+
+    LaunchedEffect(roomId) {
+        roomViewModel.loadCurrentCalendarMonthBill(roomId)
+    }
 
     LaunchedEffect(currentRoomWithTenant, showTenantInfoDialog, showBillHistoryDialog) {
         if (currentRoomWithTenant != null && (showTenantInfoDialog || showBillHistoryDialog) && allTenantsForRoom.isEmpty()) {
             allTenantsForRoom = roomViewModel.getAllTenantsForRoomFlow(roomId).firstOrNull() ?: emptyList()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            roomViewModel.clearCurrentCalendarMonthBillState()
         }
     }
 
@@ -141,17 +167,16 @@ fun RoomDetailsScreen(
                                 val calendar = Calendar.getInstance()
                                 val year = calendar.get(Calendar.YEAR)
                                 val month = calendar.get(Calendar.MONTH) + 1
-
                                 val billForCurrentMonth = roomViewModel.getOrCreateBillForRoom(
                                     roomId = currentRoomWithTenant.room.id,
-                                    billYear = year, // Corrected parameter name
-                                    billMonth = month, // Corrected parameter name
-                                    currentRoomFullRent = currentRoomWithTenant.room.rent // Corrected parameter name
+                                    billYear = year,
+                                    billMonth = month,
+                                    currentRoomFullRent = currentRoomWithTenant.room.rent
                                 )
-                                if (billForCurrentMonth.id != 0 && billForCurrentMonth.year == year && billForCurrentMonth.month == month) {
-                                    currentMonthEndReadingForDialog = billForCurrentMonth.monthEndMeterReading
+                                currentMonthEndReadingForDialog = if (billForCurrentMonth.id != 0 && billForCurrentMonth.year == year && billForCurrentMonth.month == month) {
+                                    billForCurrentMonth.monthEndMeterReading
                                 } else {
-                                    currentMonthEndReadingForDialog = null
+                                    null
                                 }
                                 showEditRoomDialog = true
                             }
@@ -168,6 +193,7 @@ fun RoomDetailsScreen(
                 .padding(innerPadding)
                 .padding(16.dp)
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
         ) {
             if (currentRoomWithTenant == null) {
                 Text("Room not found.")
@@ -175,28 +201,25 @@ fun RoomDetailsScreen(
                 Text("Details for Room: ${currentRoomWithTenant.room.name}", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                OutlinedButton(
-                    onClick = {
-                        coroutineScope.launch {
-                            val calendar = Calendar.getInstance()
-                            val year = calendar.get(Calendar.YEAR)
-                            val month = calendar.get(Calendar.MONTH) + 1
-                            val bill = roomViewModel.getOrCreateBillForRoom(
-                                roomId = currentRoomWithTenant.room.id,
-                                billYear = year, // Corrected parameter name
-                                billMonth = month, // Corrected parameter name
-                                currentRoomFullRent = currentRoomWithTenant.room.rent // Corrected parameter name
-                            )
-                            billIdForDialog = bill.id // Set the ID to trigger dialog display
+                CombinedBillActionsCard(
+                    currentMonthBill = currentCalendarMonthBill,
+                    monthYearFormat = monthYearFormat,
+                    currencyFormat = currencyFormat,
+                    shortDateFormat = shortDateFormat,
+                    onManageCurrentMonthBillClick = {
+                        currentCalendarMonthBill?.let { bill ->
+                            if (bill.id != 0) {
+                                billIdForDialog = bill.id
+                                directBillObjectForDialog = null
+                            } else {
+                                directBillObjectForDialog = bill
+                                billIdForDialog = null
+                            }
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Filled.Receipt, contentDescription = "Manage Current Bill", modifier = Modifier.padding(end = 4.dp))
-                    Text("Manage Current Month's Bill")
-                }
+                    }
+                )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 OutlinedButton(
                     onClick = {
@@ -235,28 +258,26 @@ fun RoomDetailsScreen(
             }
         }
 
-        if (billToEditInDialog != null && currentRoomWithTenant != null) {
-            val calendar = Calendar.getInstance()
-            val currentYear = calendar.get(Calendar.YEAR)
-            val currentMonth = calendar.get(Calendar.MONTH) + 1
-            val openedBillIsCurrentActive = billToEditInDialog!!.year == currentYear && billToEditInDialog!!.month == currentMonth
-
+        if (finalBillForDialog != null && currentRoomWithTenant != null) {
             AddEditBillDialog(
-                bill = billToEditInDialog!!,
-                roomViewModel = roomViewModel, // Added missing roomViewModel parameter
+                bill = finalBillForDialog!!,
+                roomViewModel = roomViewModel,
                 roomName = currentRoomWithTenant.room.name,
-                isCurrentActiveBill = openedBillIsCurrentActive,
+                isCurrentActiveBill = currentCalendarMonthBill?.let {
+                    it.year == finalBillForDialog!!.year && it.month == finalBillForDialog!!.month
+                } ?: false,
                 currentRoomInitialMeterReading = currentRoomWithTenant.room.initialMeterReading,
                 currentRoomElectricityRate = currentRoomWithTenant.room.electricityRatePerUnit,
                 fullRoomRent = currentRoomWithTenant.room.rent,
                 onDismiss = {
-                    billIdForDialog = null 
+                    billIdForDialog = null
+                    directBillObjectForDialog = null
                 },
-                // onBillUpdated was removed from AddEditBillDialog
                 onSave = {
                     coroutineScope.launch {
                         roomViewModel.saveBill(it)
-                        billIdForDialog = null 
+                        billIdForDialog = null
+                        directBillObjectForDialog = null
                     }
                 }
             )
@@ -291,9 +312,14 @@ fun RoomDetailsScreen(
                     textToShare = formattedText
                 },
                 onBillSelected = { bill ->
-                    // Handle bill selection from history, e.g., open for editing or viewing details
-                    billIdForDialog = bill.id // Example: Open AddEditBillDialog for the selected historical bill
-                    showBillHistoryDialog = false // Dismiss history dialog
+                    if (bill.id != 0) {
+                        billIdForDialog = bill.id
+                        directBillObjectForDialog = null
+                    } else {
+                        directBillObjectForDialog = bill
+                        billIdForDialog = null
+                    }
+                    showBillHistoryDialog = false
                 }
             )
         }
@@ -317,6 +343,125 @@ fun RoomDetailsScreen(
                     roomViewModel.updateRoomDetails(updatedRoom)
                     showEditRoomDialog = false
                 }
+            )
+        }
+    }
+}
+
+@Composable
+fun CombinedBillActionsCard(
+    currentMonthBill: MonthlyBillEntity?,
+    monthYearFormat: SimpleDateFormat,
+    currencyFormat: NumberFormat,
+    shortDateFormat: SimpleDateFormat, // Added for installment dates
+    onManageCurrentMonthBillClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Current Month Bill Status", 
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(bottom = 8.dp) // Adjusted padding
+                    .align(Alignment.CenterHorizontally)
+            )
+            HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp)) // Added Divider and its padding
+
+            if (currentMonthBill != null) {
+                val currentCal = Calendar.getInstance()
+                val billPeriod = monthYearFormat.format(Calendar.getInstance().apply { set(currentMonthBill.year, currentMonthBill.month - 1, 1) }.time)
+                
+                InfoRow(icon = Icons.Filled.History, label = "Period", value = billPeriod)
+
+                if (currentMonthBill.id == 0 && 
+                    currentMonthBill.year == currentCal.get(Calendar.YEAR) && 
+                    currentMonthBill.month == currentCal.get(Calendar.MONTH) +1) {
+                    InfoRow(icon = Icons.Filled.Info, label = "Status", value = "Not yet generated", valueColor = MaterialTheme.colorScheme.secondary)
+                } else if (currentMonthBill.id != 0) { // Bill is generated
+                    InfoRow(icon = Icons.Filled.Info, label = "Status", value = "Generated", valueColor = MaterialTheme.colorScheme.primary)
+                    InfoRow(icon = Icons.Filled.AttachMoney, label = "Total Due", value = currencyFormat.format(currentMonthBill.totalAmountDue))
+                    InfoRow(icon = Icons.Filled.Payments, label = "Amount Paid", value = currencyFormat.format(currentMonthBill.amountPaid))
+                    
+                    val balanceDue = currentMonthBill.totalAmountDue - currentMonthBill.amountPaid
+                    if (currentMonthBill.isFullyPaid) {
+                        InfoRow(icon = Icons.Filled.CheckCircleOutline, label = "Payment", value = "Fully Paid on ${currentMonthBill.paymentDate?.let { shortDateFormat.format(Date(it)) } ?: "N/A"}", valueColor = Color(0xFF008000) /* Green */)
+                    } else if (balanceDue > 0) {
+                        InfoRow(icon = Icons.Filled.ErrorOutline, label = "Balance Due", value = currencyFormat.format(balanceDue), valueColor = MaterialTheme.colorScheme.error)
+                    } else {
+                         InfoRow(icon = Icons.Filled.CheckCircleOutline, label = "Balance", value = "Settled", valueColor = Color(0xFF008000) /* Green */)
+                    }
+
+                    // Payment History Section
+                    if (currentMonthBill.installments.isNotEmpty()) {
+                        HorizontalDivider(modifier = Modifier.padding(top = 10.dp, bottom = 8.dp))
+                        Text("Payment History:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 6.dp))
+                        currentMonthBill.installments.forEach {
+                            Row(modifier = Modifier.fillMaxWidth().padding(start = 28.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) { 
+                                Text("${currencyFormat.format(it.amount)} on ${shortDateFormat.format(Date(it.date))}", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    } else {
+                         HorizontalDivider(modifier = Modifier.padding(top = 10.dp, bottom = 8.dp))
+                         Text("No payments recorded for this month.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp) )
+                    }
+
+                } else {
+                     Text("Status: (Data for a different period: $billPeriod)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onManageCurrentMonthBillClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.Edit, contentDescription = "Manage Bill Icon", modifier = Modifier.padding(end = 8.dp))
+                    Text(if (currentMonthBill.id == 0) "Generate & Manage Bill" else "Manage This Bill", fontSize = 16.sp)
+                }
+
+            } else {
+                Text("Current month's bill status is loading or unavailable.", modifier = Modifier.padding(top = 8.dp).align(Alignment.CenterHorizontally))
+            }
+        }
+    }
+}
+
+@Composable
+fun InfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String, valueColor: Color = Color.Unspecified) {
+    Row( // Outer Row for Icon and Text content
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp) 
+    ) {
+        Icon(
+            icon,
+            contentDescription = label,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.width(12.dp)) 
+
+        // Inner Row for label and value, to use weights for alignment
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically 
+        ) {
+            Text(
+                text = "$label:", 
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(0.4f) 
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (valueColor == Color.Unspecified) MaterialTheme.colorScheme.onSurfaceVariant else valueColor,
+                modifier = Modifier.weight(0.6f) 
             )
         }
     }

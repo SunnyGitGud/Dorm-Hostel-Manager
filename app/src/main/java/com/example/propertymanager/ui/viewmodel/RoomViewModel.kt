@@ -9,34 +9,59 @@ import com.example.propertymanager.data.entities.RoomEntity
 import com.example.propertymanager.data.entities.TenantEntity
 import com.example.propertymanager.data.model.RoomWithTenant
 import com.example.propertymanager.data.repository.MonthlyBillRepository
-import com.example.propertymanager.data.repository.PaymentInstallmentRepository // Added import
+import com.example.propertymanager.data.repository.PaymentInstallmentRepository
 import com.example.propertymanager.data.repository.RoomRepository
 import com.example.propertymanager.data.repository.TenantRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map // Added import for mapping
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import kotlin.math.abs
-import kotlin.math.max
 
 class RoomViewModel(
     private val roomRepository: RoomRepository,
     private val tenantRepository: TenantRepository,
     private val monthlyBillRepository: MonthlyBillRepository,
-    private val paymentInstallmentRepository: PaymentInstallmentRepository, // Added repository
-    private val propertyId: Int
+    private val paymentInstallmentRepository: PaymentInstallmentRepository,
+    private val propertyId: Int // Note: This is propertyId, not roomId for the ViewModel's general scope
 ) : ViewModel() {
 
     private val _roomsWithTenants = MutableStateFlow<List<RoomWithTenant>>(emptyList())
     val roomsWithTenants: StateFlow<List<RoomWithTenant>> = _roomsWithTenants.asStateFlow()
 
+    // Removed: lastSuccessfullySavedBillId and _undoableBillDetails
+
+    private val _currentCalendarMonthBill = MutableStateFlow<MonthlyBillEntity?>(null)
+    val currentCalendarMonthBill: StateFlow<MonthlyBillEntity?> = _currentCalendarMonthBill.asStateFlow()
+
     init {
         viewModelScope.launch {
             roomRepository.getRoomsForProperty(propertyId).collect {
                 _roomsWithTenants.value = it
+                // Initial load for current room's bill will be triggered by UI when specific roomId is known
+            }
+        }
+    }
+
+    fun loadCurrentCalendarMonthBill(roomId: Int) {
+        viewModelScope.launch {
+            val roomEntity = roomRepository.getRoomById(roomId) 
+            if (roomEntity != null) {
+                val calendar = Calendar.getInstance()
+                val year = calendar.get(Calendar.YEAR)
+                val month = calendar.get(Calendar.MONTH) + 1
+                val bill = getOrCreateBillForRoom(
+                    roomId = roomId,
+                    billYear = year,
+                    billMonth = month,
+                    currentRoomFullRent = roomEntity.rent
+                )
+                _currentCalendarMonthBill.value = bill
+            } else {
+                _currentCalendarMonthBill.value = null // Room not found
             }
         }
     }
@@ -104,8 +129,8 @@ class RoomViewModel(
                             dueDate = defaultDueDateCalendar.timeInMillis,
                             isInitialReadingRolledOver = false
                         )
-                        initialMoveInBill.installments = emptyList() // Set as a property
-                        saveBill(initialMoveInBill) // This will now also handle installments if any (empty for new)
+                        initialMoveInBill.installments = emptyList()
+                        saveBill(initialMoveInBill) 
                     }
                 }
             }
@@ -135,7 +160,7 @@ class RoomViewModel(
                 roomId = roomId, year = billYear, month = billMonth,
                 tenantNameAtBillingTime = "Error: Room not found", rentAtBillingTime = 0.0, isFullyPaid = true,
                 isFullRentAppliedOverride = false 
-            ).apply { installments = emptyList() } // Ensure installments is initialized even for error case
+            ).apply { installments = emptyList() } 
 
         val startOfRequestedMonth = Calendar.getInstance().apply { set(billYear, billMonth - 1, 1, 0, 0, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
         val endOfRequestedMonth = Calendar.getInstance().apply { set(billYear, billMonth - 1, 1, 23, 59, 59); set(Calendar.MILLISECOND, 999); set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH)) }.timeInMillis
@@ -161,7 +186,7 @@ class RoomViewModel(
         }
 
         var billToProcess = monthlyBillRepository.getBillForRoomMonthYearSuspend(roomId, billYear, billMonth)
-        var needsSave = false
+        var needsSave = false 
 
         if (billToProcess == null) {
             needsSave = true
@@ -189,20 +214,19 @@ class RoomViewModel(
                 dueDate = defaultDueDateCalendar.timeInMillis,
                 isInitialReadingRolledOver = false
             )
-            billToProcess.installments = emptyList() // Set as a property after creation
+            billToProcess.installments = emptyList()
         } else {
-            // Bill exists, load its installments if it has an ID
             if (billToProcess.id != 0) { 
                 val installmentEntities = paymentInstallmentRepository.getInstallmentsForBillSuspend(billToProcess.id)
                 billToProcess.installments = installmentEntities.map { PaymentInstallment(amount = it.amount, date = it.date) }
-            } // If id is 0, installments remain as default (emptyList) or from a previous copy operation
+            } 
 
             var updatedRentAtBillingTime = billToProcess.rentAtBillingTime
             var updatedIsFullRentAppliedOverride = billToProcess.isFullRentAppliedOverride
             val tenantActuallyChanged = (billToProcess.tenantIdAtBillingTime != tenantForRequestedPeriod?.id) || 
                                       (billToProcess.tenantNameAtBillingTime != (tenantForRequestedPeriod?.name ?: "Not Occupied"))
             if (tenantActuallyChanged) {
-                needsSave = true
+                needsSave = true 
                 if (tenantForRequestedPeriod != null) {
                     updatedRentAtBillingTime = roomEntity.rent 
                     val moveInCal = Calendar.getInstance().apply { timeInMillis = tenantForRequestedPeriod.moveInDate }
@@ -219,13 +243,13 @@ class RoomViewModel(
                 updatedIsFullRentAppliedOverride = null 
             }
             if (abs((billToProcess.previousMonthDues ?: 0.0) - calculatedPreviousMonthDues) > 0.001) {
-                needsSave = true
+                needsSave = true 
             }
             if (billToProcess.electricityRateAtBillingTime == null && roomEntity.electricityRatePerUnit > 0) {
-                needsSave = true
+                needsSave = true 
             }
             if (needsSave) {
-                val originalInstallments = billToProcess.installments // Preserve installments during copy
+                val originalInstallments = billToProcess.installments
                 billToProcess = billToProcess.copy(
                     tenantIdAtBillingTime = tenantForRequestedPeriod?.id,
                     tenantNameAtBillingTime = tenantForRequestedPeriod?.name ?: "Not Occupied",
@@ -234,18 +258,17 @@ class RoomViewModel(
                     previousMonthDues = calculatedPreviousMonthDues,
                     electricityRateAtBillingTime = billToProcess.electricityRateAtBillingTime ?: roomEntity.electricityRatePerUnit
                 )
-                billToProcess.installments = originalInstallments // Re-apply installments after copy
+                billToProcess.installments = originalInstallments 
             }
         }
 
         if (needsSave) {
-            val savedBillId = saveBill(billToProcess) 
-             if (billToProcess.id == 0 && savedBillId > 0L) { 
-                 billToProcess = billToProcess.copy(id = savedBillId.toInt())
-                 // Reload installments since it's a new bill and just got an ID
+            val savedId = saveBill(billToProcess)
+            if (billToProcess.id == 0 && savedId > 0L) {
+                 billToProcess = billToProcess.copy(id = savedId.toInt())
                  val installmentEntities = paymentInstallmentRepository.getInstallmentsForBillSuspend(billToProcess.id)
                  billToProcess.installments = installmentEntities.map { PaymentInstallment(amount = it.amount, date = it.date) }
-             }
+            }
         }
         
         billToProcess.calculateTotalDue() 
@@ -277,7 +300,7 @@ class RoomViewModel(
         }
         
         val billToSave = if (performRoomMeterRolloverThisSave) bill.copy(isInitialReadingRolledOver = true) else bill.copy()
-        billToSave.installments = bill.installments // Ensure installments are carried over to billToSave
+        billToSave.installments = bill.installments 
         billToSave.calculateTotalDue()
         
         val savedBillId = monthlyBillRepository.insertOrUpdateBill(billToSave)
@@ -290,6 +313,11 @@ class RoomViewModel(
             if (installmentEntities.isNotEmpty()) {
                 paymentInstallmentRepository.addAllInstallments(installmentEntities)
             }
+
+            // Removed undo logic: lastSuccessfullySavedBillId and _undoableBillDetails.value update
+            
+            // Refresh current calendar month bill state as the save might have affected it
+            loadCurrentCalendarMonthBill(bill.roomId) 
         }
 
         if (savedBillId > 0 && performRoomMeterRolloverThisSave && billToSave.monthEndMeterReading != null) {
@@ -298,13 +326,22 @@ class RoomViewModel(
         return savedBillId
     }
 
+    // Removed: undoLastBillCreation() function
+
+    // Removed: clearUndoState() function
+
+    // Call this if the current calendar month bill needs to be explicitly cleared from the UI perspective
+    fun clearCurrentCalendarMonthBillState(){
+        _currentCalendarMonthBill.value = null
+    }
+
     suspend fun getAllBillsForRoom(roomId: Int): List<MonthlyBillEntity> {
         val bills = monthlyBillRepository.getBillsForRoomSuspend(roomId)
         return bills.map { bill ->
             if (bill.id != 0) {
                 val installmentEntities = paymentInstallmentRepository.getInstallmentsForBillSuspend(bill.id)
                 bill.installments = installmentEntities.map { PaymentInstallment(amount = it.amount, date = it.date) }
-            } // If bill.id is 0, its installments list remains as default (emptyList)
+            } 
             bill
         }
     }
@@ -322,9 +359,10 @@ class RoomViewModel(
     fun getBillByIdFlow(billId: Int): Flow<MonthlyBillEntity?> {
         return monthlyBillRepository.getBillById(billId).map { bill ->
             bill?.let {
-                // Installments are primarily loaded by getOrCreateBillForRoom or getAllBillsForRoom
-                // For observing a single bill directly with its installments, a more complex setup
-                // might be needed, or ensure it's populated before observation if live installment updates are critical.
+                if (it.id != 0 && it.installments.isEmpty()) {
+                    val installmentEntities = paymentInstallmentRepository.getInstallmentsForBillSuspend(it.id)
+                    it.installments = installmentEntities.map { inst -> PaymentInstallment(amount = inst.amount, date = inst.date) }
+                }
             }
             bill
         }

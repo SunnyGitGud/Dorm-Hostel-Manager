@@ -19,6 +19,11 @@ class MonthlyBillRepository(private val monthlyBillDao: MonthlyBillDao) {
         return monthlyBillDao.getBillById(billId)
     }
 
+    // Added suspend function for one-time fetch
+    suspend fun getBillByIdSuspend(billId: Int): MonthlyBillEntity? {
+        return monthlyBillDao.getBillByIdSuspend(billId)
+    }
+
     fun getBillForRoomMonthYear(roomId: Int, year: Int, month: Int): Flow<MonthlyBillEntity?> {
         return monthlyBillDao.getBillForRoomMonthYear(roomId, year, month)
     }
@@ -31,5 +36,10 @@ class MonthlyBillRepository(private val monthlyBillDao: MonthlyBillDao) {
         // Ensure total is calculated before saving
         bill.calculateTotalDue()
         return monthlyBillDao.insertOrUpdate(bill)
+    }
+
+    // Added delete function
+    suspend fun deleteBillById(billId: Int): Int {
+        return monthlyBillDao.deleteBillById(billId)
     }
 }

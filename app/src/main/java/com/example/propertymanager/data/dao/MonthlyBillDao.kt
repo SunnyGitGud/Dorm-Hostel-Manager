@@ -22,10 +22,15 @@ interface MonthlyBillDao {
     @Query("SELECT * FROM monthly_bills WHERE id = :billId")
     fun getBillById(billId: Int): Flow<MonthlyBillEntity?>
 
+    @Query("SELECT * FROM monthly_bills WHERE id = :billId")
+    suspend fun getBillByIdSuspend(billId: Int): MonthlyBillEntity? // Added suspend function
+
     @Query("SELECT * FROM monthly_bills WHERE roomId = :roomId AND year = :year AND month = :month LIMIT 1")
     fun getBillForRoomMonthYear(roomId: Int, year: Int, month: Int): Flow<MonthlyBillEntity?>
 
-    // You might also want a simple suspend function for non-Flow one-time fetch
     @Query("SELECT * FROM monthly_bills WHERE roomId = :roomId AND year = :year AND month = :month LIMIT 1")
     suspend fun getBillForRoomMonthYearSuspend(roomId: Int, year: Int, month: Int): MonthlyBillEntity?
+
+    @Query("DELETE FROM monthly_bills WHERE id = :billId")
+    suspend fun deleteBillById(billId: Int): Int // Added delete function, returns num rows deleted
 }
