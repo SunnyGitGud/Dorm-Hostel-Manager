@@ -1,22 +1,41 @@
 package com.example.propertymanager.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.MeetingRoom // For Room
+import androidx.compose.material.icons.outlined.Person // For Tenant
+// Status Icons
+import androidx.compose.material.icons.filled.ErrorOutline // For Due
+import androidx.compose.material.icons.filled.CheckCircleOutline // For Advance
+import androidx.compose.material.icons.filled.Verified // For Paid
+import androidx.compose.material.icons.filled.ReceiptLong // For No Bills Yet
+import androidx.compose.material.icons.filled.Info // For Vacant/General Info
+
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -28,10 +47,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+// import androidx.compose.ui.graphics.Color // No longer needed for RoomSummaryForPropertyCard
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-// Removed FontWeight import as it's no longer explicitly used in PropertyItem
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.propertymanager.data.entities.PropertyEntity
 import com.example.propertymanager.ui.viewmodel.PropertyViewModel
@@ -39,16 +60,35 @@ import com.example.propertymanager.ui.viewmodel.PropertyFinancialSummary
 import java.text.NumberFormat
 import java.util.Locale
 
+// Enum to represent the semantic status of a room bill/occupancy
+enum class BillStatusType {
+    DUE,
+    ADVANCE,
+    PAID,
+    VACANT,
+    NO_BILLS_YET,
+    GENERAL_INFO // Fallback or for other info states
+}
+
+// Data class for room summary (used by ViewModel and this Screen)
+data class RoomSummaryForPropertyCard(
+    val roomName: String,
+    val tenantName: String?,
+    val statusText: String,
+    val statusType: BillStatusType // Changed from statusColor
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PropertyScreen(
     viewModel: PropertyViewModel,
-    onPropertyClick: (Int) -> Unit
+    onPropertyClick: (Int) -> Unit // This will be for "View Details" button
 ) {
     val properties by viewModel.properties.collectAsState()
     val propertyFinancialSummaries by viewModel.propertyFinancialSummaries.collectAsState()
-    var showAddPropertyDialog by remember { mutableStateOf(false) }
+    val propertyRoomSummariesValue by viewModel.propertyRoomSummaries.collectAsState()
 
+    var showAddPropertyDialog by remember { mutableStateOf(false) }
     var selectedPropertyForOptions by remember { mutableStateOf<PropertyEntity?>(null) }
     var showPropertyOptionsDialog by remember { mutableStateOf(false) }
 
@@ -65,24 +105,30 @@ fun PropertyScreen(
         LazyColumn(
             modifier = Modifier
                 .padding(innerPadding)
-                .padding(16.dp) // Overall padding for the list
+                .padding(horizontal = 16.dp, vertical = 8.dp) 
         ) {
             if (properties.isEmpty()) {
                 item {
-                    Text("No properties found. Click the '+' button to add one.")
+                    Text(
+                        text = "No properties found. Click the '+' button to add one.",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
                 }
             } else {
                 items(properties, key = { it.id }) { property ->
+                    val currentRoomSummaries = propertyRoomSummariesValue[property.id] ?: emptyList()
                     PropertyItem(
                         property = property,
                         financialSummary = propertyFinancialSummaries[property.id],
-                        onClick = { onPropertyClick(property.id) },
+                        roomSummaries = currentRoomSummaries,
+                        onViewDetailsClick = { onPropertyClick(property.id) }, 
                         onLongClick = { 
                             selectedPropertyForOptions = property
                             showPropertyOptionsDialog = true
                         }
                     )
-                    Spacer(modifier = Modifier.height(12.dp)) // Increased spacing between cards
+                    Spacer(modifier = Modifier.height(16.dp)) 
                 }
             }
         }
@@ -115,9 +161,11 @@ fun PropertyScreen(
 fun PropertyItem(
     property: PropertyEntity,
     financialSummary: PropertyFinancialSummary?,
-    onClick: () -> Unit,
+    roomSummaries: List<RoomSummaryForPropertyCard>,
+    onViewDetailsClick: () -> Unit, 
     onLongClick: () -> Unit
 ) {
+    var isExpanded by remember { mutableStateOf(false) }
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) }
 
     Card(
@@ -126,42 +174,173 @@ fun PropertyItem(
             .pointerInput(Unit) { 
                 detectTapGestures(
                     onLongPress = { onLongClick() },
-                    onTap = { onClick() } 
+                    onTap = { isExpanded = !isExpanded } 
                 )
             },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), // Slightly increased elevation
-        shape = MaterialTheme.shapes.medium // Using a predefined shape
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp), 
+        shape = MaterialTheme.shapes.large 
     ) {
-        Column(modifier = Modifier.padding(16.dp)) { // Standard padding inside card
-            Text(
-                text = property.name, 
-                style = MaterialTheme.typography.titleLarge // Increased font size for name
-            )
-            Spacer(modifier = Modifier.height(6.dp)) // Increased spacer
+        Column(modifier = Modifier.padding(16.dp)) { 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = property.name, 
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                IconButton(onClick = { isExpanded = !isExpanded }) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        modifier = Modifier.size(30.dp) 
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp)) 
             Text(
                 text = property.address, 
-                style = MaterialTheme.typography.bodyMedium // Increased font size for address
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant 
             )
             
             financialSummary?.let {
-                // Check against 0 as totalDue is now ceil-ed Double (e.g. 106.0)
+                if (it.totalDue > 0 || it.totalAdvance > 0) { 
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
                 if (it.totalDue > 0) { 
-                    Spacer(modifier = Modifier.height(8.dp)) // Increased spacer
-                    Text(
-                        text = "Total Due: ${currencyFormat.format(it.totalDue)}",
-                        style = MaterialTheme.typography.titleSmall, // Larger and bolder style for due amount
-                        color = MaterialTheme.colorScheme.error // Retain error color for due
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Total Due: ",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = currencyFormat.format(it.totalDue),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if(it.totalAdvance > 0) Spacer(modifier = Modifier.height(4.dp)) 
                 }
-                 // Optionally display totalAdvance as well if needed, with similar styling
                 if (it.totalAdvance > 0) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Total Advance: ",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = currencyFormat.format(it.totalAdvance),
+                            style = MaterialTheme.typography.bodyLarge, 
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            if (roomSummaries.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                if (!isExpanded) {
                     Text(
-                        text = "Total Advance: ${currencyFormat.format(it.totalAdvance)}",
-                        style = MaterialTheme.typography.titleSmall, // Consistent styling for financial summaries
-                        color = Color(0xFF2E7D32) // PositiveGreenColor or similar for advance
+                        text = "${roomSummaries.size} Room${if (roomSummaries.size > 1) "s" else ""}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp) 
                     )
                 }
+            }
+
+            AnimatedVisibility(visible = isExpanded) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Divider(modifier = Modifier.padding(vertical = 12.dp))
+                    Text(
+                        text = "Rooms:",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    roomSummaries.forEach { roomSummary ->
+                        val statusColor = when (roomSummary.statusType) {
+                            BillStatusType.DUE -> MaterialTheme.colorScheme.error
+                            BillStatusType.ADVANCE -> MaterialTheme.colorScheme.secondary
+                            BillStatusType.PAID -> MaterialTheme.colorScheme.primary // Or a specific success color
+                            BillStatusType.VACANT, BillStatusType.NO_BILLS_YET, BillStatusType.GENERAL_INFO -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        val statusIcon: ImageVector = when (roomSummary.statusType) {
+                            BillStatusType.DUE -> Icons.Filled.ErrorOutline
+                            BillStatusType.ADVANCE -> Icons.Filled.CheckCircleOutline
+                            BillStatusType.PAID -> Icons.Filled.Verified
+                            BillStatusType.VACANT -> Icons.Filled.Info 
+                            BillStatusType.NO_BILLS_YET -> Icons.Filled.ReceiptLong
+                            BillStatusType.GENERAL_INFO -> Icons.Filled.Info
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .padding(start = 8.dp, top = 4.dp, bottom = 8.dp) 
+                                .fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.MeetingRoom,
+                                    contentDescription = "Room",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = roomSummary.roomName,
+                                    style = MaterialTheme.typography.labelLarge 
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Person,
+                                    contentDescription = "Tenant",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = if (roomSummary.tenantName != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = roomSummary.tenantName ?: "N/A", // Removed "Tenant: " prefix
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = statusIcon,
+                                    contentDescription = "Status: ${roomSummary.statusText}", // More descriptive
+                                    modifier = Modifier.size(20.dp),
+                                    tint = statusColor // Use theme-derived color
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = roomSummary.statusText,
+                                    style = MaterialTheme.typography.bodyMedium, 
+                                    color = statusColor, // Use theme-derived color
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
+            val spacerHeight = if (isExpanded && roomSummaries.isNotEmpty()) 4.dp else 12.dp
+            Spacer(modifier = Modifier.height(spacerHeight))
+
+            Divider(modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) 
+            OutlinedButton(
+                onClick = onViewDetailsClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("View Details")
             }
         }
     }
@@ -174,7 +353,7 @@ fun AddPropertyDialog(
     onAddProperty: (name: String, address: String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
-    var address by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") } // Corrected mutableStateOF to mutableStateOf
     var nameError by remember { mutableStateOf<String?>(null) }
     var addressError by remember { mutableStateOf<String?>(null) }
 
@@ -258,7 +437,7 @@ fun PropertyOptionsDialog(
                     viewModel.deleteProperty(property)
                     onDismiss()
                 }) {
-                    Text("Delete Property", color = Color.Red)
+                    Text("Delete Property", color = MaterialTheme.colorScheme.error)
                 }
             }
         },
