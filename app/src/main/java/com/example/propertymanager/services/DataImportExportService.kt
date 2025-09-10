@@ -95,7 +95,11 @@ class DataImportExportService(
         format: ExportFormat
     ): String {
         val mainBuilder = StringBuilder()
-        val cal = Calendar.getInstance()
+        val systemCalendar = Calendar.getInstance() // For current year/month check
+        val actualCurrentYear = systemCalendar.get(Calendar.YEAR)
+        val actualCurrentMonth = systemCalendar.get(Calendar.MONTH) + 1 // Calendar.MONTH is 0-indexed
+
+        val cal = Calendar.getInstance() // For date manipulations specific to export
 
         if (format == ExportFormat.TEXT) {
             mainBuilder.append("Property Data Export - ")
@@ -123,6 +127,11 @@ class DataImportExportService(
                 val monthsToIterate = if (monthInput != null) listOf(monthInput) else (1..12).toList()
 
                 for (currentMonthInLoop in monthsToIterate) {
+                    // Skip future months in the current year for a full year export
+                    if (monthInput == null && year == actualCurrentYear && currentMonthInLoop > actualCurrentMonth) {
+                        continue
+                    }
+
                     val bill = monthlyBillRepository.getBillForRoomMonthYearSuspend(room.id, year, currentMonthInLoop)
                     
                     val tenantNameForContext = bill?.tenantNameAtBillingTime ?: run {
@@ -187,7 +196,6 @@ class DataImportExportService(
                             row.add(year.toString())
                             row.add(currentMonthInLoop.toString())
                             row.add(escapeCsv(tenantNameForContext))
-                            // Fields 6 through 20 are empty (15 fields)
                             repeat(15) { row.add("") }
                             mainBuilder.append(row.joinToString(",")).append("\n")
                         } else { 
