@@ -44,13 +44,10 @@ class RoomViewModel(
     private val _roomsWithTenants = MutableStateFlow<List<RoomWithTenant>>(emptyList())
     val roomsWithTenants: StateFlow<List<RoomWithTenant>> = _roomsWithTenants.asStateFlow()
 
-    // --- MODIFIED: Replaced currentCalendarMonthBill with displayedBillDetails ---
     private val _displayedBillDetails = MutableStateFlow<MonthlyBillEntity?>(null)
     val displayedBillDetails: StateFlow<MonthlyBillEntity?> = _displayedBillDetails.asStateFlow()
-    // Stores the year and month currently being displayed by the pager
     private var displayedYear: Int? = null
     private var displayedMonth: Int? = null
-    // --- END MODIFICATION ---
 
     private val _roomBillSummaries = MutableStateFlow<Map<Int, BillStatusSummary>>(emptyMap())
     val roomBillSummaries: StateFlow<Map<Int, BillStatusSummary>> = _roomBillSummaries.asStateFlow()
@@ -91,7 +88,6 @@ class RoomViewModel(
         }
     }
 
-    // --- NEW FUNCTION: To load bill details for a specific month ---
     fun loadBillDetailsForMonth(roomId: Int, year: Int, month: Int) {
         viewModelScope.launch {
             Log.d("RoomViewModel", "loadBillDetailsForMonth: roomId=$roomId, year=$year, month=$month")
@@ -104,8 +100,8 @@ class RoomViewModel(
                     currentRoomFullRent = roomEntity.rent
                 )
                 _displayedBillDetails.value = bill
-                displayedYear = year // Store the currently displayed year
-                displayedMonth = month // Store the currently displayed month
+                displayedYear = year
+                displayedMonth = month
                 Log.d("RoomViewModel", "loadBillDetailsForMonth: Loaded bill for $year-$month, ID: ${bill.id}, Due: ${bill.totalAmountDue}")
             } else {
                 _displayedBillDetails.value = null
@@ -115,10 +111,6 @@ class RoomViewModel(
             }
         }
     }
-    // --- END NEW FUNCTION ---
-
-    // --- REMOVED: loadCurrentCalendarMonthBill function ---
-    // fun loadCurrentCalendarMonthBill(roomId: Int) { ... }
 
     fun addRoom(name: String, rent: Double, electricityRatePerUnit: Double, initialMeterReading: Double?) {
         viewModelScope.launch {
@@ -139,7 +131,6 @@ class RoomViewModel(
         viewModelScope.launch {
             roomRepository.update(room)
             updateRoomBillSummaries(_roomsWithTenants.value)
-             // If the currently displayed bill's room is updated, refresh it
             if (room.id == _displayedBillDetails.value?.roomId && displayedYear != null && displayedMonth != null) {
                 loadBillDetailsForMonth(room.id, displayedYear!!, displayedMonth!!)
             }
@@ -185,7 +176,7 @@ class RoomViewModel(
                             rentAtBillingTime = rentForMoveInMonth, 
                             isFullRentAppliedOverride = null, 
                             electricityRateAtBillingTime = roomEntity.electricityRatePerUnit,
-                            previousMonthDues = 0.0,
+                            previousMonthDues = 0.0, // New tenant, new bill = 0 previous dues for this bill
                             dueDate = defaultDueDateCalendar.timeInMillis,
                             isInitialReadingRolledOver = false
                         )
@@ -193,7 +184,8 @@ class RoomViewModel(
                         saveBill(initialMoveInBill) 
                     }
                 } else {
-                     // If bill exists, and tenant change affects displayed bill, refresh it
+                    // Bill exists, ensure it's updated for the new tenant if needed
+                    // This will trigger getOrCreateBillForRoom which should handle tenant changes
                     if (roomId == _displayedBillDetails.value?.roomId && moveInYear == displayedYear && moveInMonth == displayedMonth) {
                         loadBillDetailsForMonth(roomId, moveInYear, moveInMonth)
                     }
@@ -208,7 +200,6 @@ class RoomViewModel(
     fun updateTenant(tenant: TenantEntity) {
         viewModelScope.launch {
             tenantRepository.insertOrUpdateTenant(tenant)
-             // If tenant change affects displayed bill, refresh it
             if (tenant.roomId == _displayedBillDetails.value?.roomId && displayedYear != null && displayedMonth != null) {
                  loadBillDetailsForMonth(tenant.roomId, displayedYear!!, displayedMonth!!)
             }
@@ -218,15 +209,10 @@ class RoomViewModel(
 
     fun recordTenantMoveOutDate(tenantId: Int, moveOutTimestamp: Long) {
         viewModelScope.launch {
-            // Fetch the tenant first to get their roomId
-            val tenant = tenantRepository.getTenantById(tenantId) // This is now a suspend fun
-
-            // Proceed to set the move-out date
+            val tenant = tenantRepository.getTenantById(tenantId)
             val moveOutSuccessful = tenantRepository.setTenantMoveOutDate(tenantId, moveOutTimestamp)
 
             if (moveOutSuccessful && tenant != null) {
-                // If move-out was successful and we have the tenant object,
-                // check if their room's bill is currently displayed.
                 if (tenant.roomId == _displayedBillDetails.value?.roomId &&
                     displayedYear != null &&
                     displayedMonth != null
@@ -234,18 +220,15 @@ class RoomViewModel(
                     loadBillDetailsForMonth(tenant.roomId, displayedYear!!, displayedMonth!!)
                 }
             }
-            // Always update summaries as tenant changes can affect current month summaries too
             updateRoomBillSummaries(_roomsWithTenants.value)
         }
     }
 
-    // getOrCreateBillForRoom remains largely the same, as its logic is crucial
-    // It's used internally by loadBillDetailsForMonth and updateRoomBillSummaries
     suspend fun getOrCreateBillForRoom(
         roomId: Int,
         billYear: Int,
         billMonth: Int,
-        currentRoomFullRent: Double
+        currentRoomFullRent: Double // This might not be needed if roomEntity is always fetched
     ): MonthlyBillEntity {
         val roomEntity = roomRepository.getRoomById(roomId)
         
@@ -344,7 +327,7 @@ class RoomViewModel(
                         }
                     }
                 } else {
-                    updatedRentAtBillingTime = 0.0
+                    updatedRentAtBillingTime = 0.0 // No tenant for period, rent is 0
                 }
                 updatedIsFullRentAppliedOverride = null 
             }
@@ -355,25 +338,59 @@ class RoomViewModel(
                  billToProcess = billToProcess.copy(electricityRateAtBillingTime = roomEntity.electricityRatePerUnit)
                 needsSave = true
             }
-            if (needsSave) {
-                val originalInstallments = billToProcess.installments
-                val originalAmountPaid = billToProcess.amountPaid
 
-                billToProcess = billToProcess.copy(
-                    tenantIdAtBillingTime = tenantForRequestedPeriod?.id,
-                    tenantNameAtBillingTime = tenantForRequestedPeriod?.name ?: "Not Occupied",
-                    rentAtBillingTime = updatedRentAtBillingTime, 
-                    isFullRentAppliedOverride = updatedIsFullRentAppliedOverride, 
-                    previousMonthDues = calculatedPreviousMonthDues,
-                    electricityRateAtBillingTime = billToProcess.electricityRateAtBillingTime ?: roomEntity.electricityRatePerUnit
-                )
-                billToProcess.installments = originalInstallments 
-                billToProcess.amountPaid = originalAmountPaid
+            // Core fix for tenant change data carry-over
+            if (needsSave) {
+                val newTenantId = tenantForRequestedPeriod?.id
+                val newTenantName = tenantForRequestedPeriod?.name ?: "Not Occupied"
+                
+                if (tenantActuallyChanged) {
+                    // Tenant has changed. Reset tenant-specific financial data for this bill record.
+                    billToProcess = billToProcess.copy(
+                        tenantIdAtBillingTime = newTenantId,
+                        tenantNameAtBillingTime = newTenantName,
+                        rentAtBillingTime = updatedRentAtBillingTime, // Prorated rent for new tenant
+                        isFullRentAppliedOverride = null, // Reset rent override flag
+                        previousMonthDues = calculatedPreviousMonthDues, // Dues specific to THIS new tenant
+                        electricityRateAtBillingTime = roomEntity.electricityRatePerUnit, // Reset to current room rate
+                        
+                        // Reset fields that belonged to the previous tenant on this bill record
+                        electricityUnits = null, 
+                        monthEndMeterReading = null,
+                        waterBill = 0.0,
+                        otherCharges = 0.0,
+                        otherChargesDescription = null,
+                        isInitialReadingRolledOver = false, // Critical for new tenant's unit calculation
+                        
+                        amountPaid = 0.0 // Explicitly reset amount paid to zero for new tenant on this bill
+                    )
+                    billToProcess.installments = emptyList() // Explicitly clear previous tenant's installments
+                } else {
+                    // Tenant is the same, or no tenant, or only previous dues/rate changed for the same tenant.
+                    // Preserve existing financial data (installments, amountPaid, meter readings etc.)
+                    val originalInstallments = billToProcess.installments
+                    val originalAmountPaid = billToProcess.amountPaid
+
+                    billToProcess = billToProcess.copy(
+                        // tenantId and tenantNameAtBillingTime might be updated if tenant just moved out (becomes "Not Occupied")
+                        // but it's not a *new* tenant taking over, so financial data is preserved for finalization.
+                        tenantIdAtBillingTime = newTenantId, 
+                        tenantNameAtBillingTime = newTenantName,
+                        rentAtBillingTime = updatedRentAtBillingTime, 
+                        isFullRentAppliedOverride = updatedIsFullRentAppliedOverride, 
+                        previousMonthDues = calculatedPreviousMonthDues,
+                        electricityRateAtBillingTime = billToProcess.electricityRateAtBillingTime ?: roomEntity.electricityRatePerUnit
+                        // Meter readings, units, etc., from original billToProcess are preserved if not a tenant change
+                        // amountPaid and installments are NOT part of copy, will be set below for this 'else' branch
+                    )
+                    billToProcess.installments = originalInstallments
+                    billToProcess.amountPaid = originalAmountPaid
+                }
             }
         }
 
         if (needsSave) {
-            val savedId = saveBillInternal(billToProcess) // Renamed to avoid recursion with public saveBill
+            val savedId = saveBillInternal(billToProcess)
             if (billToProcess.id == 0 && savedId > 0L) {
                  val fetchedBill = monthlyBillRepository.getBillByIdSuspend(savedId.toInt())
                  if (fetchedBill != null) {
@@ -394,15 +411,16 @@ class RoomViewModel(
                  }
             }
         } else {
+            // Even if not saved, ensure totalAmountDue is up-to-date with any potential runtime changes
+            // (though in this path, it should largely be based on DB loaded values)
             billToProcess.calculateTotalDue() 
         }
         return billToProcess
     }
 
-    // --- MODIFIED: saveBill to refresh _displayedBillDetails if it's the current one ---
-    // Renamed internal saveBill to saveBillInternal to break potential recursion
+    // Corrected saveBillInternal method
     private suspend fun saveBillInternal(bill: MonthlyBillEntity): Long {
-         val roomEntity = roomRepository.getRoomById(bill.roomId)
+        val roomEntity = roomRepository.getRoomById(bill.roomId)
         var performRoomMeterRolloverThisSave = false
 
         if (roomEntity == null || roomEntity.isHidden) {
@@ -411,20 +429,29 @@ class RoomViewModel(
         }
 
         if (bill.tenantNameAtBillingTime != "Not Occupied") {
-            if (bill.electricityUnits == null || !bill.isInitialReadingRolledOver) {
-                bill.electricityRateAtBillingTime = bill.electricityRateAtBillingTime ?: roomEntity.electricityRatePerUnit
-                if (roomEntity.initialMeterReading != null && bill.monthEndMeterReading != null &&
-                    bill.monthEndMeterReading!! >= roomEntity.initialMeterReading!!) {
-                    bill.electricityUnits = bill.monthEndMeterReading!! - roomEntity.initialMeterReading!!
-                } else {
-                    bill.electricityUnits = 0.0
+            bill.electricityRateAtBillingTime = bill.electricityRateAtBillingTime ?: roomEntity.electricityRatePerUnit
+
+            if (bill.monthEndMeterReading != null && roomEntity.initialMeterReading != null) {
+                // Calculate units if they are not set or if the bill needs recalculation (e.g., new tenant)
+                if (bill.electricityUnits == null || !bill.isInitialReadingRolledOver) {
+                    val startReading = roomEntity.initialMeterReading // Correctly use room's initial reading
+                    if (bill.monthEndMeterReading!! >= startReading) {
+                        bill.electricityUnits = bill.monthEndMeterReading!! - startReading
+                    } else {
+                        bill.electricityUnits = 0.0
+                        Log.w("RoomViewModel", "monthEndMeterReading ${bill.monthEndMeterReading} is less than startReading $startReading for bill ID ${bill.id}. Units set to 0.")
+                    }
                 }
+            } else if (bill.electricityUnits == null) {
+                bill.electricityUnits = 0.0 // Default to 0 if cannot calculate
             }
-            if (!bill.isInitialReadingRolledOver && bill.monthEndMeterReading != null &&
-                (bill.electricityUnits ?: 0.0) >= 0.0) {
+
+            // Determine if this bill's monthEndMeterReading should update the room's initialMeterReading for the NEXT period
+            if (!bill.isInitialReadingRolledOver && bill.monthEndMeterReading != null && (bill.electricityUnits ?: -1.0) >= 0.0) {
                 performRoomMeterRolloverThisSave = true
             }
         } else {
+            // No active tenant for this bill, clear/reset usage-based charges
             bill.electricityUnits = 0.0
             bill.monthEndMeterReading = null
             bill.waterBill = 0.0
@@ -433,16 +460,18 @@ class RoomViewModel(
             bill.electricityRateAtBillingTime = bill.electricityRateAtBillingTime ?: roomEntity.electricityRatePerUnit
         }
         
+        // Create a copy for saving, updating isInitialReadingRolledOver if a rollover is performed this save.
         val billToSave = if (performRoomMeterRolloverThisSave) bill.copy(isInitialReadingRolledOver = true) else bill.copy()
-        billToSave.installments = bill.installments
-        billToSave.calculateTotalDue()
+        billToSave.installments = bill.installments // Ensure installments list is part of the object being saved
+        billToSave.calculateTotalDue() // Calculate total due with potentially updated units/charges before saving
         
         val savedBillId = monthlyBillRepository.upsertBill(billToSave)
 
         if (savedBillId > 0) {
             val billIdInt = if (savedBillId > Int.MAX_VALUE) billToSave.id else savedBillId.toInt()
-            paymentInstallmentRepository.deleteInstallmentsForBill(billIdInt)
-            val installmentEntities = bill.installments.map {
+            // Save/update installments for the bill
+            paymentInstallmentRepository.deleteInstallmentsForBill(billIdInt) // Clear existing
+            val installmentEntities = billToSave.installments.map { // Use billToSave's installments
                 PaymentInstallmentEntity(billId = billIdInt, amount = it.amount, date = it.date)
             }
             if (installmentEntities.isNotEmpty()) {
@@ -450,17 +479,16 @@ class RoomViewModel(
             }
         }
 
+        // If meter reading was used and needs to update the room's current initial reading for the NEXT period
         if (savedBillId > 0 && performRoomMeterRolloverThisSave && billToSave.monthEndMeterReading != null) {
             roomRepository.updateMeterReading(billToSave.roomId, billToSave.monthEndMeterReading, System.currentTimeMillis())
         }
         return savedBillId
     }
 
-    // Public saveBill that refreshes displayed details
     suspend fun saveBill(bill: MonthlyBillEntity): Long {
         val savedId = saveBillInternal(bill)
         if (savedId > 0) {
-            // If the saved bill is the one being displayed, refresh it
             if (bill.roomId == _displayedBillDetails.value?.roomId &&
                 bill.year == displayedYear &&
                 bill.month == displayedMonth
@@ -471,16 +499,13 @@ class RoomViewModel(
         }
         return savedId
     }
-    // --- END MODIFICATION ---
 
-    // --- MODIFIED: Renamed function ---
     fun clearDisplayedBillDetailsState(){
         _displayedBillDetails.value = null
         displayedYear = null
         displayedMonth = null
         Log.d("RoomViewModel", "clearDisplayedBillDetailsState: Cleared displayed bill details.")
     }
-    // --- END MODIFICATION ---
 
     suspend fun getAllBillsForRoom(roomId: Int): List<MonthlyBillEntity> {
         val roomEntity = roomRepository.getRoomById(roomId)
@@ -528,7 +553,7 @@ class RoomViewModel(
         viewModelScope.launch {
             roomRepository.updateRoomHiddenStatus(roomId, isHidden)
              if (isHidden && roomId == _displayedBillDetails.value?.roomId) {
-                clearDisplayedBillDetailsState() // Clear details if room becomes hidden
+                clearDisplayedBillDetailsState()
             }
         }
     }
@@ -537,7 +562,7 @@ class RoomViewModel(
         viewModelScope.launch {
             roomRepository.delete(roomWithTenant.room)
             if (roomWithTenant.room.id == _displayedBillDetails.value?.roomId) {
-                clearDisplayedBillDetailsState() // Clear details if room is deleted
+                clearDisplayedBillDetailsState()
             }
         }
     }
