@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.CurrencyRupee // Added for Rent icon
+import androidx.compose.material.icons.automirrored.filled.ArrowBack // ADDED for back button
 import androidx.compose.material.icons.outlined.Bolt // Added for Electricity Rate icon
 import androidx.compose.material.icons.outlined.CalendarToday // Added for Date icon
 import androidx.compose.material.icons.outlined.Person // Added for Tenant Name icon
@@ -36,6 +37,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton // ADDED for back button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -80,7 +82,19 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
     var showRoomOptionsDialog by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Rooms") }) },
+        topBar = { 
+            TopAppBar(
+                title = { Text("Rooms") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+                }
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddRoomDialog = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add Room")

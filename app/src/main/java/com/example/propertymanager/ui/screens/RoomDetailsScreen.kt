@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.ElectricBolt // ADDED
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -92,6 +93,67 @@ import kotlin.math.max
 import androidx.compose.foundation.pager.HorizontalPager 
 import androidx.compose.foundation.pager.rememberPagerState 
 import androidx.compose.foundation.ExperimentalFoundationApi 
+
+// Helper function to format a single bill for sharing
+fun formatSingleBillForSharing(
+    bill: MonthlyBillEntity,
+    roomName: String,
+    monthYearFormat: SimpleDateFormat,
+    currencyFormat: NumberFormat,
+    shortDateFormat: SimpleDateFormat
+): String {
+    val billPeriodCal = Calendar.getInstance().apply { set(bill.year, bill.month - 1, 1) }
+    val billPeriodText = monthYearFormat.format(billPeriodCal.time)
+    val sb = StringBuilder()
+
+    sb.appendLine("Bill Details for Room: $roomName")
+    sb.appendLine("Period: $billPeriodText")
+    sb.appendLine("------------------------------")
+    sb.appendLine("Tenant: ${bill.tenantNameAtBillingTime}")
+    sb.appendLine("Rent: ${currencyFormat.format(bill.rentAtBillingTime)}")
+
+    if ((bill.electricityUnits ?: 0.0) > 0) {
+        sb.appendLine("Electricity Units: ${String.format(Locale.US, "%.1f", bill.electricityUnits)} units")
+        sb.appendLine("Elec. Rate: ${currencyFormat.format(bill.electricityRateAtBillingTime ?: 0.0)}/unit")
+        sb.appendLine("Electricity Charges: ${currencyFormat.format(bill.electricityBill)}")
+    }
+    if ((bill.waterBill ?: 0.0) > 0) {
+        sb.appendLine("Water Bill: ${currencyFormat.format(bill.waterBill)}")
+    }
+    if ((bill.otherCharges ?: 0.0) > 0) {
+        sb.appendLine("Other Charges (${bill.otherChargesDescription ?: ""}): ${currencyFormat.format(bill.otherCharges)}")
+    }
+    if ((bill.previousMonthDues ?: 0.0) > 0) {
+        sb.appendLine("Previous Dues: ${currencyFormat.format(bill.previousMonthDues)}")
+    }
+    sb.appendLine("------------------------------")
+    sb.appendLine("Total Amount Due: ${currencyFormat.format(bill.totalAmountDue)}")
+    sb.appendLine("Amount Paid: ${currencyFormat.format(bill.amountPaid)}")
+
+    val balance = bill.totalAmountDue - bill.amountPaid
+    if (bill.isFullyPaid) {
+        sb.appendLine("Status: Fully Paid on ${bill.paymentDate?.let { shortDateFormat.format(Date(it)) } ?: "N/A"}")
+    } else if (balance > 0.001) {
+        sb.appendLine("Balance Due: ${currencyFormat.format(balance)}")
+    } else if (balance < -0.001) {
+        sb.appendLine("Advance Paid: ${currencyFormat.format(-balance)}")
+    } else {
+        sb.appendLine("Status: Settled")
+    }
+
+    if (bill.installments.isNotEmpty()) {
+        sb.appendLine("------------------------------")
+        sb.appendLine("Payment History:")
+        bill.installments.forEach {
+            sb.appendLine("- ${currencyFormat.format(it.amount)} on ${shortDateFormat.format(Date(it.date))}")
+        }
+    }
+    sb.appendLine("------------------------------")
+    bill.dueDate?.let {
+        sb.appendLine("Due Date: ${shortDateFormat.format(Date(it))}")
+    }
+    return sb.toString()
+}
 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class) 
@@ -226,7 +288,7 @@ fun RoomDetailsScreen(
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 20.dp), // MODIFIED for less peek
+                    contentPadding = PaddingValues(horizontal = 20.dp), 
                     pageSpacing = 8.dp 
                 ) { pageIndex -> 
                     val billForThisPage = if (pagerState.settledPage == pageIndex) displayedBillDetails else null
@@ -243,6 +305,17 @@ fun RoomDetailsScreen(
                             } else {
                                 directBillObjectForDialog = billToManage
                                 billIdForDialog = null
+                            }
+                        },
+                        onShareBillClick = { billToShare -> 
+                            currentRoomWithTenant.room.name.let { roomName ->
+                                textToShare = formatSingleBillForSharing(
+                                    bill = billToShare,
+                                    roomName = roomName,
+                                    monthYearFormat = monthYearFormat,
+                                    currencyFormat = currencyFormat,
+                                    shortDateFormat = shortDateFormat
+                                )
                             }
                         }
                     )
@@ -386,7 +459,8 @@ fun CombinedBillActionsCard(
     monthYearFormat: SimpleDateFormat,
     currencyFormat: NumberFormat,
     shortDateFormat: SimpleDateFormat,
-    onManageBillClick: (MonthlyBillEntity) -> Unit
+    onManageBillClick: (MonthlyBillEntity) -> Unit,
+    onShareBillClick: (MonthlyBillEntity) -> Unit 
 ) {
     Card(
         modifier = Modifier
@@ -396,21 +470,34 @@ fun CombinedBillActionsCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            val titleText = if (displayedBill != null) {
-                val billCalendar = Calendar.getInstance().apply { set(displayedBill.year, displayedBill.month - 1, 1) }
-                "Bill for ${monthYearFormat.format(billCalendar.time)}"
-            } else {
-                "Bill Status"
+            Row( 
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                val titleText = if (displayedBill != null) {
+                    val billCalendar = Calendar.getInstance().apply { set(displayedBill.year, displayedBill.month - 1, 1) }
+                    "Bill for ${monthYearFormat.format(billCalendar.time)}"
+                } else {
+                    "Bill Status"
+                }
+                Text(
+                    text = titleText,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f) 
+                )
+                if (displayedBill != null && displayedBill.id != 0) { 
+                    IconButton(onClick = { onShareBillClick(displayedBill) }) {
+                        Icon(
+                            imageVector = Icons.Filled.Share,
+                            contentDescription = "Share Bill",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
-            Text(
-                text = titleText,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .padding(bottom = 8.dp)
-                    .align(Alignment.CenterHorizontally)
-            )
-            HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) 
 
             if (displayedBill != null) {
                 val billPeriodCal = Calendar.getInstance().apply { set(displayedBill.year, displayedBill.month - 1, 1) }
@@ -425,6 +512,11 @@ fun CombinedBillActionsCard(
                      InfoRow(icon = Icons.Filled.Info, label = "Status", value = "Not yet generated", valueColor = MaterialTheme.colorScheme.secondary)
                 } else if (displayedBill.id != 0) { 
                     InfoRow(icon = Icons.Filled.Info, label = "Status", value = "Generated", valueColor = MaterialTheme.colorScheme.primary)
+                    
+                    if (displayedBill.electricityBill > 0.0) {
+                        InfoRow(icon = Icons.Outlined.ElectricBolt, label = "Charges", value = currencyFormat.format(displayedBill.electricityBill)) // MODIFIED
+                    }
+
                     InfoRow(icon = Icons.Filled.AttachMoney, label = "Total Due", value = currencyFormat.format(displayedBill.totalAmountDue))
                     InfoRow(icon = Icons.Filled.Payments, label = "Amount Paid", value = currencyFormat.format(displayedBill.amountPaid))
                     
