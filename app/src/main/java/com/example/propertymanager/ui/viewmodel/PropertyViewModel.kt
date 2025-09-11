@@ -1,10 +1,10 @@
 package com.example.propertymanager.ui.viewmodel
 
+import android.app.Application
 import android.util.Log
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.propertymanager.data.entities.PropertyEntity
-// RoomEntity, TenantEntity, MonthlyBillEntity, PaymentInstallmentEntity are used by the service
 import com.example.propertymanager.data.repository.PropertyRepository
 import com.example.propertymanager.data.repository.RoomRepository
 import com.example.propertymanager.data.repository.MonthlyBillRepository
@@ -16,6 +16,7 @@ import com.example.propertymanager.ui.screens.RoomSummaryForPropertyCard
 import com.example.propertymanager.ui.screens.BillStatusType
 import com.example.propertymanager.data.model.RoomWithTenant
 import com.example.propertymanager.ui.screens.ExportFormat
+import com.example.propertymanager.utils.LanguageManager // Import LanguageManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,13 +35,14 @@ data class PropertyFinancialSummary(
 )
 
 class PropertyViewModel(
+    application: Application, // Added Application context
     private val propertyRepository: PropertyRepository,
     private val roomRepository: RoomRepository,
     private val monthlyBillRepository: MonthlyBillRepository,
     private val paymentInstallmentRepository: PaymentInstallmentRepository,
     private val tenantRepository: TenantRepository,
-    private val dataImportExportService: DataImportExportService // Service injected
-) : ViewModel() {
+    private val dataImportExportService: DataImportExportService
+) : AndroidViewModel(application) { // Inherit from AndroidViewModel
 
     private val _properties = MutableStateFlow<List<PropertyEntity>>(emptyList())
     val properties: StateFlow<List<PropertyEntity>> = _properties.asStateFlow()
@@ -60,9 +62,17 @@ class PropertyViewModel(
     private val _importStatus = MutableStateFlow<String?>(null)
     val importStatus: StateFlow<String?> = _importStatus.asStateFlow()
 
+    private val _currentLanguageCode = MutableStateFlow("en") // Default, will be updated
+    val currentLanguageCode: StateFlow<String> = _currentLanguageCode.asStateFlow()
+
+    private val _languageChangeRequiresRestart = MutableStateFlow(false)
+    val languageChangeRequiresRestart: StateFlow<Boolean> = _languageChangeRequiresRestart.asStateFlow()
+
     private val currencyFormatter = NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build())
 
     init {
+        _currentLanguageCode.value = LanguageManager.getCurrentLanguage(getApplication())
+
         viewModelScope.launch {
             propertyRepository.getAllProperties().collectLatest { propertyList ->
                 _properties.value = propertyList
@@ -70,6 +80,20 @@ class PropertyViewModel(
                 updatePropertyRoomSummaries(propertyList)
             }
         }
+    }
+
+    fun setLanguage(languageCode: String) {
+        val currentContext = getApplication<Application>().applicationContext
+        val currentSelectedLanguage = LanguageManager.getCurrentLanguage(currentContext)
+        if (currentSelectedLanguage != languageCode) {
+            LanguageManager.setLanguage(currentContext, languageCode)
+            _currentLanguageCode.value = languageCode
+            _languageChangeRequiresRestart.value = true
+        }
+    }
+
+    fun consumedLanguageChangeRestartSignal() {
+        _languageChangeRequiresRestart.value = false
     }
 
     fun clearExportData() {
@@ -84,7 +108,6 @@ class PropertyViewModel(
         _importStatus.value = null
     }
 
-    // Financial summary and room summary logic remains the same as it reads current DB state
     private suspend fun calculatePropertyFinancialSummary(property: PropertyEntity): PropertyFinancialSummary {
         var currentPropertyTotalDue = 0.0
         var currentPropertyTotalAdvance = 0.0
@@ -98,9 +121,9 @@ class PropertyViewModel(
                 val bill = monthlyBillRepository.getBillForRoomMonthYearSuspend(roomWithTenant.room.id, currentYear, currentMonth)
                 if (bill != null && bill.id != 0) {
                     val installmentEntities = paymentInstallmentRepository.getInstallmentsForBillSuspend(bill.id)
-                    bill.amountPaid = installmentEntities.sumOf { it.amount } // Ensure amountPaid is current before calc
+                    bill.amountPaid = installmentEntities.sumOf { it.amount } 
                     bill.calculateTotalDue()
-                    val balance = bill.totalAmountDue - bill.amountPaid // Use bill.amountPaid
+                    val balance = bill.totalAmountDue - bill.amountPaid 
                     if (balance > 0.001) {
                         currentPropertyTotalDue += balance
                     } else if (balance < -0.001) {
@@ -150,9 +173,9 @@ class PropertyViewModel(
                     statusType = BillStatusType.NO_BILLS_YET
                 } else {
                     val installmentEntities = paymentInstallmentRepository.getInstallmentsForBillSuspend(bill.id)
-                    bill.amountPaid = installmentEntities.sumOf { it.amount } // Ensure amountPaid is current
+                    bill.amountPaid = installmentEntities.sumOf { it.amount } 
                     bill.calculateTotalDue()
-                    val balance = bill.totalAmountDue - bill.amountPaid // Use bill.amountPaid
+                    val balance = bill.totalAmountDue - bill.amountPaid 
                     when {
                         balance > 0.001 -> {
                             statusText = "Due: ${currencyFormatter.format(ceil(balance))}"
@@ -202,7 +225,6 @@ class PropertyViewModel(
     fun setPropertyHiddenStatus(propertyId: Int, isHidden: Boolean) {
         viewModelScope.launch {
             propertyRepository.updatePropertyHiddenStatus(propertyId, isHidden)
-            // Refresh summaries, existing logic for this is fine.
             val currentProps = _properties.value
             updatePropertyFinancialSummaries(currentProps.filterNot { it.isHidden })
             updatePropertyRoomSummaries(currentProps.filterNot { it.isHidden })
@@ -211,7 +233,7 @@ class PropertyViewModel(
 
     fun triggerExportData(year: Int, monthInput: Int?, format: ExportFormat) {
         viewModelScope.launch {
-            _exportCsvData.value = null // Clear previous data
+            _exportCsvData.value = null 
             _exportTextData.value = null
 
             val currentPropertiesToExport = _properties.value.filter { !it.isHidden }
@@ -244,12 +266,8 @@ class PropertyViewModel(
             val result: ImportResult = dataImportExportService.processImportData(csvString)
             _importStatus.value = result.message
 
-            // Trigger data refresh if import had successful records or even if it didn't (to clear any stale views)
-            // The collectLatest in init should take care of this automatically when properties table changes,
-            // but an explicit refresh ensures UI consistency immediately after import.
             val currentProps = propertyRepository.getAllProperties().first()
-            _properties.value = currentProps // This will trigger financial and room summaries update via collectLatest
-            // Forcing update of summaries if properties haven't changed but their financial details have
+            _properties.value = currentProps 
             updatePropertyFinancialSummaries(currentProps)
             updatePropertyRoomSummaries(currentProps)
         }

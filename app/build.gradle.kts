@@ -59,6 +59,9 @@ dependencies {
     kapt(libs.room.compiler)
     testImplementation(libs.room.testing)
 
+    // --- App Compat (for AppCompatDelegate) ---
+    implementation("androidx.appcompat:appcompat:1.6.1") // Added this line
+
     // --- Testing ---
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

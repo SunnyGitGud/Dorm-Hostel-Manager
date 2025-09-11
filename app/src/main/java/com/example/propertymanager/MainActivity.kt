@@ -1,5 +1,6 @@
 package com.example.propertymanager
 
+import android.content.Context // Added import
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,13 +24,20 @@ import com.example.propertymanager.ui.viewmodel.PropertyViewModel
 import com.example.propertymanager.ui.viewmodel.PropertyViewModelFactory
 import com.example.propertymanager.ui.viewmodel.RoomViewModel
 import com.example.propertymanager.ui.viewmodel.RoomViewModelFactory
+import com.example.propertymanager.utils.LanguageManager
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var propertyViewModel: PropertyViewModel
     // RoomViewModel is now created per propertyId, so no single instance here
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LanguageManager.applyPersistedLanguage(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // LanguageManager.applyPersistedLanguage(this) // Removed this line
+
         super.onCreate(savedInstanceState)
 
         val database = PropertyManagerDatabase.getDatabase(applicationContext)
@@ -49,11 +57,12 @@ class MainActivity : ComponentActivity() {
 
         // PropertyViewModelFactory setup
         val propertyFactory = PropertyViewModelFactory(
+            application, // Pass the application context
             propertyRepository,
             roomRepository, 
             monthlyBillRepository, 
             paymentInstallmentRepository,
-            tenantRepository // Added TenantRepository
+            tenantRepository
         )
         propertyViewModel = ViewModelProvider(this, propertyFactory)[PropertyViewModel::class.java]
 
