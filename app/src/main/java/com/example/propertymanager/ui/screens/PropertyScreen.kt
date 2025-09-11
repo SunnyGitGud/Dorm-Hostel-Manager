@@ -80,6 +80,7 @@ import com.example.propertymanager.ui.common.SettingsAction
 import com.example.propertymanager.ui.common.SettingsDrawerContent
 import com.example.propertymanager.ui.viewmodel.PropertyFinancialSummary
 import com.example.propertymanager.ui.viewmodel.PropertyViewModel
+import com.example.propertymanager.ui.viewmodel.ThemeViewModel // ADDED
 import kotlinx.coroutines.launch
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -120,6 +121,7 @@ enum class ExportScope { // Added enum for export scope
 @Composable
 fun PropertyScreen(
     viewModel: PropertyViewModel,
+    themeViewModel: ThemeViewModel, // ADDED themeViewModel parameter
     onPropertyClick: (Int) -> Unit // This will be for "View Details" button
 ) {
     val properties by viewModel.properties.collectAsState()
@@ -259,28 +261,30 @@ fun PropertyScreen(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            SettingsDrawerContent {
-                action ->
-                scope.launch {
-                    drawerState.close()
+            SettingsDrawerContent(
+                themeViewModel = themeViewModel, // PASSED themeViewModel
+                onItemSelected = { action ->
+                    scope.launch {
+                        drawerState.close()
+                    }
+                    when (action) {
+                        SettingsAction.EXPORT_DATA -> showExportDialog = true
+                        SettingsAction.IMPORT_DATA -> importCsvLauncher.launch(arrayOf("text/csv", "text/plain", "application/csv", "text/comma-separated-values"))
+                        SettingsAction.SYNC_GOOGLE_DRIVE -> {
+                            Toast.makeText(context, context.getString(R.string.coming_soon), Toast.LENGTH_SHORT).show()
+                            Log.d("SettingsDrawer", "Sync with Google Drive clicked")
+                        }
+                        SettingsAction.TOGGLE_DARK_MODE -> {
+                            Toast.makeText(context, context.getString(R.string.coming_soon), Toast.LENGTH_SHORT).show()
+                            Log.d("SettingsDrawer", "Toggle Dark Mode clicked")
+                        }
+                        SettingsAction.CHANGE_LANGUAGE -> {
+                            showLanguageDialog = true
+                            Log.d("SettingsDrawer", "Change Language clicked")
+                        }
+                    }
                 }
-                when (action) {
-                    SettingsAction.EXPORT_DATA -> showExportDialog = true
-                    SettingsAction.IMPORT_DATA -> importCsvLauncher.launch(arrayOf("text/csv", "text/plain", "application/csv", "text/comma-separated-values"))
-                    SettingsAction.SYNC_GOOGLE_DRIVE -> {
-                        Toast.makeText(context, context.getString(R.string.coming_soon), Toast.LENGTH_SHORT).show() // Corrected
-                        Log.d("SettingsDrawer", "Sync with Google Drive clicked")
-                    }
-                    SettingsAction.TOGGLE_DARK_MODE -> {
-                        Toast.makeText(context, context.getString(R.string.coming_soon), Toast.LENGTH_SHORT).show() // Corrected
-                        Log.d("SettingsDrawer", "Toggle Dark Mode clicked")
-                    }
-                    SettingsAction.CHANGE_LANGUAGE -> {
-                        showLanguageDialog = true
-                        Log.d("SettingsDrawer", "Change Language clicked")
-                    }
-                }
-            }
+            )
         }
     ) {
         Scaffold(

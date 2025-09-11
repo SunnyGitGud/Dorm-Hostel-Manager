@@ -62,6 +62,9 @@ dependencies {
     // --- App Compat (for AppCompatDelegate) ---
     implementation("androidx.appcompat:appcompat:1.6.1") // Added this line
 
+    // --- DataStore ---
+    implementation(libs.androidx.datastore.preferences) // ADDED THIS LINE
+
     // --- Testing ---
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

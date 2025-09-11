@@ -1,10 +1,12 @@
 package com.example.propertymanager
 
-import android.content.Context // Added import
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.Text // Keep for error case
+import androidx.compose.runtime.collectAsState // ADDED
+import androidx.compose.runtime.getValue // ADDED
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -17,32 +19,33 @@ import com.example.propertymanager.data.repository.RoomRepository
 import com.example.propertymanager.data.repository.TenantRepository
 import com.example.propertymanager.data.repository.MonthlyBillRepository
 import com.example.propertymanager.data.repository.PaymentInstallmentRepository
+import com.example.propertymanager.data.repository.UserPreferencesRepository // ADDED
 import com.example.propertymanager.ui.screens.PropertyScreen
 import com.example.propertymanager.ui.screens.RoomScreen
 import com.example.propertymanager.ui.screens.RoomDetailsScreen
+import com.example.propertymanager.ui.theme.MyApplication3Theme // ADDED (Assuming this is your theme file)
 import com.example.propertymanager.ui.viewmodel.PropertyViewModel
 import com.example.propertymanager.ui.viewmodel.PropertyViewModelFactory
 import com.example.propertymanager.ui.viewmodel.RoomViewModel
 import com.example.propertymanager.ui.viewmodel.RoomViewModelFactory
+import com.example.propertymanager.ui.viewmodel.ThemeViewModel // ADDED
+import com.example.propertymanager.ui.viewmodel.ThemeViewModelFactory // ADDED
 import com.example.propertymanager.utils.LanguageManager
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var propertyViewModel: PropertyViewModel
-    // RoomViewModel is now created per propertyId, so no single instance here
+    private lateinit var themeViewModel: ThemeViewModel // ADDED
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LanguageManager.applyPersistedLanguage(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // LanguageManager.applyPersistedLanguage(this) // Removed this line
-
         super.onCreate(savedInstanceState)
 
         val database = PropertyManagerDatabase.getDatabase(applicationContext)
         val propertyDao = database.propertyDao()
-        // DAOs for RoomViewModelFactory & PropertyViewModelFactory - can be defined once here
         val roomDao = database.roomDao()
         val tenantDao = database.tenantDao()
         val monthlyBillDao = database.monthlyBillDao()
@@ -54,88 +57,96 @@ class MainActivity : ComponentActivity() {
         val tenantRepository = TenantRepository(tenantDao)
         val monthlyBillRepository = MonthlyBillRepository(monthlyBillDao)
         val paymentInstallmentRepository = PaymentInstallmentRepository(paymentInstallmentDao)
+        val userPreferencesRepository = UserPreferencesRepository(applicationContext) // ADDED
 
         // PropertyViewModelFactory setup
         val propertyFactory = PropertyViewModelFactory(
-            application, // Pass the application context
+            application,
             propertyRepository,
-            roomRepository, 
-            monthlyBillRepository, 
+            roomRepository,
+            monthlyBillRepository,
             paymentInstallmentRepository,
             tenantRepository
         )
         propertyViewModel = ViewModelProvider(this, propertyFactory)[PropertyViewModel::class.java]
 
+        // ThemeViewModelFactory setup
+        val themeViewModelFactory = ThemeViewModelFactory(userPreferencesRepository) // ADDED
+        themeViewModel = ViewModelProvider(this, themeViewModelFactory)[ThemeViewModel::class.java] // ADDED
 
         setContent {
-            val navController = rememberNavController()
-            NavHost(navController = navController, startDestination = "propertyList") {
-                composable("propertyList") {
-                    PropertyScreen(
-                        viewModel = propertyViewModel,
-                        onPropertyClick = { propertyId ->
-                            navController.navigate("roomList/$propertyId")
-                        }
-                    )
-                }
-                composable(
-                    route = "roomList/{propertyId}",
-                    arguments = listOf(navArgument("propertyId") { type = NavType.IntType })
-                ) { backStackEntry ->
-                    val propertyId = backStackEntry.arguments?.getInt("propertyId")
-                    if (propertyId != null) {
-                        val roomViewModelFactory = RoomViewModelFactory(
-                            roomRepository,
-                            tenantRepository,
-                            monthlyBillRepository,
-                            paymentInstallmentRepository,
-                            propertyId
+            val currentTheme by themeViewModel.selectedTheme.collectAsState()
+
+            MyApplication3Theme(appTheme = currentTheme) { // ADDED - Wrap NavHost with your theme
+                val navController = rememberNavController()
+                NavHost(navController = navController, startDestination = "propertyList") {
+                    composable("propertyList") {
+                        PropertyScreen(
+                            viewModel = propertyViewModel,
+                            themeViewModel = themeViewModel, // PASSED themeViewModel
+                            onPropertyClick = { propertyId ->
+                                navController.navigate("roomList/$propertyId")
+                            }
                         )
-                        val roomViewModel = ViewModelProvider(
-                            this@MainActivity, 
-                            roomViewModelFactory
-                        )["RoomViewModel_property_$propertyId", RoomViewModel::class.java] // Unique key
-                        
-                        RoomScreen(
-                            propertyId = propertyId,
-                            roomViewModel = roomViewModel, 
-                            navController = navController
-                        )
-                    } else {
-                        Text("Error: Property ID not found")
                     }
-                }
-                composable(
-                    route = "room_details/{propertyId}/{roomId}",
-                    arguments = listOf(
-                        navArgument("propertyId") { type = NavType.IntType },
-                        navArgument("roomId") { type = NavType.IntType }
-                    )
-                ) { backStackEntry ->
-                    val propertyId = backStackEntry.arguments?.getInt("propertyId")
-                    val roomId = backStackEntry.arguments?.getInt("roomId")
-
-                    if (propertyId != null && roomId != null) {
-                        val roomViewModelFactory = RoomViewModelFactory(
-                            roomRepository,
-                            tenantRepository,
-                            monthlyBillRepository,
-                            paymentInstallmentRepository,
-                            propertyId // Use propertyId for the factory
+                    composable(
+                        route = "roomList/{propertyId}",
+                        arguments = listOf(navArgument("propertyId") { type = NavType.IntType })
+                    ) { backStackEntry ->
+                        val propertyId = backStackEntry.arguments?.getInt("propertyId")
+                        if (propertyId != null) {
+                            val roomViewModelFactory = RoomViewModelFactory(
+                                roomRepository,
+                                tenantRepository,
+                                monthlyBillRepository,
+                                paymentInstallmentRepository,
+                                propertyId
+                            )
+                            val roomViewModel = ViewModelProvider(
+                                this@MainActivity,
+                                roomViewModelFactory
+                            )["RoomViewModel_property_$propertyId", RoomViewModel::class.java]
+                            
+                            RoomScreen(
+                                propertyId = propertyId,
+                                roomViewModel = roomViewModel,
+                                navController = navController
+                            )
+                        } else {
+                            Text("Error: Property ID not found")
+                        }
+                    }
+                    composable(
+                        route = "room_details/{propertyId}/{roomId}",
+                        arguments = listOf(
+                            navArgument("propertyId") { type = NavType.IntType },
+                            navArgument("roomId") { type = NavType.IntType }
                         )
-                        // Get the ViewModel scoped to this propertyId
-                        val roomViewModel = ViewModelProvider(
-                            this@MainActivity, 
-                            roomViewModelFactory
-                        )["RoomViewModel_property_$propertyId", RoomViewModel::class.java] // Unique key
+                    ) { backStackEntry ->
+                        val propertyId = backStackEntry.arguments?.getInt("propertyId")
+                        val roomId = backStackEntry.arguments?.getInt("roomId")
 
-                        RoomDetailsScreen(
-                            roomId = roomId,
-                            roomViewModel = roomViewModel,
-                            navController = navController
-                        )
-                    } else {
-                        Text("Error: Property or Room ID not found. Please go back.")
+                        if (propertyId != null && roomId != null) {
+                            val roomViewModelFactory = RoomViewModelFactory(
+                                roomRepository,
+                                tenantRepository,
+                                monthlyBillRepository,
+                                paymentInstallmentRepository,
+                                propertyId
+                            )
+                            val roomViewModel = ViewModelProvider(
+                                this@MainActivity,
+                                roomViewModelFactory
+                            )["RoomViewModel_property_$propertyId", RoomViewModel::class.java]
+
+                            RoomDetailsScreen(
+                                roomId = roomId,
+                                roomViewModel = roomViewModel,
+                                navController = navController
+                            )
+                        } else {
+                            Text("Error: Property or Room ID not found. Please go back.")
+                        }
                     }
                 }
             }
