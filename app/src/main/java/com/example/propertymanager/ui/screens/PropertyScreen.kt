@@ -274,14 +274,11 @@ fun PropertyScreen(
                             Toast.makeText(context, context.getString(R.string.coming_soon), Toast.LENGTH_SHORT).show()
                             Log.d("SettingsDrawer", "Sync with Google Drive clicked")
                         }
-                        SettingsAction.TOGGLE_DARK_MODE -> {
-                            Toast.makeText(context, context.getString(R.string.coming_soon), Toast.LENGTH_SHORT).show()
-                            Log.d("SettingsDrawer", "Toggle Dark Mode clicked")
-                        }
                         SettingsAction.CHANGE_LANGUAGE -> {
                             showLanguageDialog = true
                             Log.d("SettingsDrawer", "Change Language clicked")
                         }
+                        // TOGGLE_DARK_MODE case is removed as it's handled in SettingsDrawerContent directly
                     }
                 }
             )

@@ -12,6 +12,9 @@ enum class AppTheme(val displayName: String) {
     KANAGAWA_LIGHT("Kanagawa Light"),
     KANAGAWA_DARK("Kanagawa Dark");      // Dark variant
 
+    val isDarkVariant: Boolean // ADDED
+        get() = this in listOf(CATPPUCCIN_MOCHA, EVERFOREST_DARK, KANAGAWA_DARK)
+
     // Helper to get the base theme for the dialog (usually the light variant or system default)
     fun getBaseForDialog(): AppTheme {
         return when (this) {
