@@ -1,5 +1,7 @@
 package com.example.propertymanager.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable 
@@ -20,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Call // ADDED for Call button
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.CurrencyRupee // Added for Rent icon
@@ -32,6 +35,7 @@ import androidx.compose.material.icons.outlined.Phone // Added for Tenant Mobile
 import androidx.compose.material.icons.outlined.Speed // Added for Meter Reading icon
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults // ADDED for Call button icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput 
+import androidx.compose.ui.platform.LocalContext // ADDED for Intent
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -215,6 +220,7 @@ fun RoomItem(
 ) {
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) }
     var isExpanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current // Context for launching intent
 
     Card(
         modifier = Modifier
@@ -326,9 +332,38 @@ fun RoomItem(
                         }
                         
                         Spacer(modifier = Modifier.height(12.dp))
-                        OutlinedButton(onClick = { onRemoveTenant(roomWithTenant) }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Move Out", modifier = Modifier.padding(end = 4.dp) /* Already has icon */)
-                            Text("Move Out")
+                        // HORIZONTAL BUTTONS ROW
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { onRemoveTenant(roomWithTenant) },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Move Out", modifier = Modifier.size(ButtonDefaults.IconSize))
+                                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                                Text("Move Out")
+                            }
+
+                            val tenantMobile = roomWithTenant.tenant.mobile
+                            if (tenantMobile.isNotBlank()) {
+                                Button(
+                                    onClick = {
+                                        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$tenantMobile"))
+                                        context.startActivity(intent)
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Call,
+                                        contentDescription = "Call Tenant",
+                                        modifier = Modifier.size(ButtonDefaults.IconSize)
+                                    )
+                                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                                    Text("Call") // Shortened for space, could be Call Tenant Name if preferred
+                                }
+                            }
                         }
 
                     } else if (roomWithTenant.tenant != null && roomWithTenant.tenant.moveOutDate != null) {
@@ -344,8 +379,9 @@ fun RoomItem(
                             Text("Move-out: ${formatDate(roomWithTenant.tenant.moveOutDate)}", style = MaterialTheme.typography.bodyMedium)
                         }
                         Spacer(modifier = Modifier.height(12.dp))
-                        Button(onClick = { onAddEditTenant(roomWithTenant) }) {
-                            Icon(Icons.Filled.Add, contentDescription = "Add New Tenant", modifier = Modifier.padding(end = 4.dp)/* Already has icon */)
+                        Button(onClick = { onAddEditTenant(roomWithTenant) }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Filled.Add, contentDescription = "Add New Tenant", modifier = Modifier.size(ButtonDefaults.IconSize))
+                            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                             Text("Add New Tenant")
                         }
                     } else { 
@@ -355,8 +391,9 @@ fun RoomItem(
                             Text("No tenant assigned.", style = MaterialTheme.typography.bodyMedium)
                         }
                         Spacer(modifier = Modifier.height(12.dp))
-                        Button(onClick = { onAddEditTenant(roomWithTenant) }) {
-                             Icon(Icons.Filled.Add, contentDescription = "Add Tenant", modifier = Modifier.padding(end = 4.dp)/* Already has icon */)
+                        Button(onClick = { onAddEditTenant(roomWithTenant) }, modifier = Modifier.fillMaxWidth()) {
+                             Icon(Icons.Filled.Add, contentDescription = "Add Tenant", modifier = Modifier.size(ButtonDefaults.IconSize))
+                             Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                             Text("Add Tenant")
                         }
                     }
@@ -365,7 +402,8 @@ fun RoomItem(
                         onClick = { onViewDetails(roomWithTenant.room.propertyId, roomWithTenant.room.id) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Filled.ArrowForward, contentDescription = "View Details", modifier = Modifier.padding(end = 4.dp))
+                        Icon(Icons.Filled.ArrowForward, contentDescription = "View Details", modifier = Modifier.size(ButtonDefaults.IconSize))
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text("View Details / Manage Bills")
                     }
                 }

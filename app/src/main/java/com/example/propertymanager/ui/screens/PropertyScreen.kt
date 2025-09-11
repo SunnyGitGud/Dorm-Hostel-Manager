@@ -82,6 +82,7 @@ import com.example.propertymanager.ui.viewmodel.PropertyFinancialSummary
 import com.example.propertymanager.ui.viewmodel.PropertyViewModel
 import com.example.propertymanager.ui.viewmodel.ThemeViewModel // ADDED
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay // ADDED FOR DELAY
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
@@ -145,6 +146,7 @@ fun PropertyScreen(
     val context = LocalContext.current // Context defined for the entire PropertyScreen
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    var isDrawerActionInProgress by remember { mutableStateOf(false) } // MODIFIED
 
     val createCsvLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
@@ -265,8 +267,9 @@ fun PropertyScreen(
                 themeViewModel = themeViewModel, // PASSED themeViewModel
                 onItemSelected = { action ->
                     scope.launch {
-                        drawerState.close()
+                        drawerState.close() // Close drawer first
                     }
+                    // Handle actions after drawer is closed to prevent state issues
                     when (action) {
                         SettingsAction.EXPORT_DATA -> showExportDialog = true
                         SettingsAction.IMPORT_DATA -> importCsvLauncher.launch(arrayOf("text/csv", "text/plain", "application/csv", "text/comma-separated-values"))
@@ -290,8 +293,20 @@ fun PropertyScreen(
                     title = { Text(stringResource(R.string.properties_title)) }, 
                     navigationIcon = {
                         IconButton(onClick = { 
-                            scope.launch {
-                                if (drawerState.isClosed) drawerState.open() else drawerState.close()
+                            if (!isDrawerActionInProgress) {
+                                isDrawerActionInProgress = true
+                                scope.launch {
+                                    try {
+                                        kotlinx.coroutines.delay(50L) // CHANGED FROM yield()
+                                        if (drawerState.isClosed) {
+                                            drawerState.open()
+                                        } else {
+                                            drawerState.close()
+                                        }
+                                    } finally {
+                                        isDrawerActionInProgress = false
+                                    }
+                                }
                             }
                         }) {
                             Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.settings_menu))

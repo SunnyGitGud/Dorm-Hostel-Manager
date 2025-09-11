@@ -5,8 +5,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.Text // Keep for error case
-import androidx.compose.runtime.collectAsState // ADDED
-import androidx.compose.runtime.getValue // ADDED
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -19,23 +19,23 @@ import com.example.propertymanager.data.repository.RoomRepository
 import com.example.propertymanager.data.repository.TenantRepository
 import com.example.propertymanager.data.repository.MonthlyBillRepository
 import com.example.propertymanager.data.repository.PaymentInstallmentRepository
-import com.example.propertymanager.data.repository.UserPreferencesRepository // ADDED
+import com.example.propertymanager.data.repository.UserPreferencesRepository
 import com.example.propertymanager.ui.screens.PropertyScreen
 import com.example.propertymanager.ui.screens.RoomScreen
 import com.example.propertymanager.ui.screens.RoomDetailsScreen
-import com.example.propertymanager.ui.theme.MyApplication3Theme // ADDED (Assuming this is your theme file)
+import com.example.propertymanager.ui.theme.MyApplication3Theme
 import com.example.propertymanager.ui.viewmodel.PropertyViewModel
 import com.example.propertymanager.ui.viewmodel.PropertyViewModelFactory
 import com.example.propertymanager.ui.viewmodel.RoomViewModel
 import com.example.propertymanager.ui.viewmodel.RoomViewModelFactory
-import com.example.propertymanager.ui.viewmodel.ThemeViewModel // ADDED
-import com.example.propertymanager.ui.viewmodel.ThemeViewModelFactory // ADDED
+import com.example.propertymanager.ui.viewmodel.ThemeViewModel
+import com.example.propertymanager.ui.viewmodel.ThemeViewModelFactory
 import com.example.propertymanager.utils.LanguageManager
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var propertyViewModel: PropertyViewModel
-    private lateinit var themeViewModel: ThemeViewModel // ADDED
+    private lateinit var themeViewModel: ThemeViewModel
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LanguageManager.applyPersistedLanguage(newBase))
@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
         val tenantRepository = TenantRepository(tenantDao)
         val monthlyBillRepository = MonthlyBillRepository(monthlyBillDao)
         val paymentInstallmentRepository = PaymentInstallmentRepository(paymentInstallmentDao)
-        val userPreferencesRepository = UserPreferencesRepository(applicationContext) // ADDED
+        val userPreferencesRepository = UserPreferencesRepository(applicationContext)
 
         // PropertyViewModelFactory setup
         val propertyFactory = PropertyViewModelFactory(
@@ -71,19 +71,22 @@ class MainActivity : ComponentActivity() {
         propertyViewModel = ViewModelProvider(this, propertyFactory)[PropertyViewModel::class.java]
 
         // ThemeViewModelFactory setup
-        val themeViewModelFactory = ThemeViewModelFactory(userPreferencesRepository) // ADDED
-        themeViewModel = ViewModelProvider(this, themeViewModelFactory)[ThemeViewModel::class.java] // ADDED
+        val themeViewModelFactory = ThemeViewModelFactory(userPreferencesRepository)
+        themeViewModel = ViewModelProvider(this, themeViewModelFactory)[ThemeViewModel::class.java]
 
         setContent {
             val currentTheme by themeViewModel.selectedTheme.collectAsState()
 
-            MyApplication3Theme(appTheme = currentTheme) { // ADDED - Wrap NavHost with your theme
+            MyApplication3Theme(appTheme = currentTheme) {
                 val navController = rememberNavController()
+
                 NavHost(navController = navController, startDestination = "propertyList") {
-                    composable("propertyList") {
+                    composable(
+                        route = "propertyList"
+                    ) {
                         PropertyScreen(
                             viewModel = propertyViewModel,
-                            themeViewModel = themeViewModel, // PASSED themeViewModel
+                            themeViewModel = themeViewModel,
                             onPropertyClick = { propertyId ->
                                 navController.navigate("roomList/$propertyId")
                             }
