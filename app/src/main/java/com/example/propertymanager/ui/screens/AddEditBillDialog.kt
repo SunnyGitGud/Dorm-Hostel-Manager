@@ -74,9 +74,9 @@ fun AddEditBillDialog(
     onDismiss: () -> Unit,
     onSave: (MonthlyBillEntity) -> Unit
 ) {
-    val currentBillState = remember(bill, bill.id) { // Removed bill.isFullRentAppliedOverride, bill.installments from key for initial state
+    val currentBillState = remember(bill, bill.id) { 
         mutableStateOf(bill.copy().apply {
-            installments = bill.installments // Ensure installments are part of the initial copy
+            installments = bill.installments 
         })
     }
 
@@ -84,7 +84,6 @@ fun AddEditBillDialog(
         bill.rentAtBillingTime
     }
 
-    // Checkbox state, initialized based on the original bill's override flag OR defaults to false if it's the first time (null)
     var applyFullRentOverride by remember(bill.id, bill.isFullRentAppliedOverride) {
         mutableStateOf(bill.isFullRentAppliedOverride ?: false)
     }
@@ -101,13 +100,12 @@ fun AddEditBillDialog(
         bill.tenantIdAtBillingTime != null
     }
 
-    // Corrected logic for showing the override checkbox
     val showFullRentOverrideCheckbox = remember(bill.id, isCurrentActiveBill, wasBillForOccupiedRoomInitially, initialRentForThisDialogInstance, fullRoomRent, bill.isFullRentAppliedOverride) {
         isCurrentActiveBill &&
         wasBillForOccupiedRoomInitially &&
         fullRoomRent > 0 &&
-        bill.isFullRentAppliedOverride == null && // IMPORTANT: Only show if no decision has been persisted yet
-        (initialRentForThisDialogInstance < fullRoomRent - 0.001) // And if current rent is less than full rent (pro-rata situation)
+        bill.isFullRentAppliedOverride == null && 
+        (initialRentForThisDialogInstance < fullRoomRent - 0.001) 
     }
 
     var monthEndMeterReadingString by remember(bill.id, bill.monthEndMeterReading, wasBillForOccupiedRoomInitially) {
@@ -136,73 +134,76 @@ fun AddEditBillDialog(
     val installmentsToDisplay = currentBillState.value.installments
 
     LaunchedEffect(
-        applyFullRentOverride, // React to checkbox changes
-        initialRentForThisDialogInstance, fullRoomRent, // Constants for rent calculation
-        monthEndMeterReadingString, waterBillString, otherChargesString, otherChargesDescription, // User inputs
-        wasBillForOccupiedRoomInitially, isMeterReadingActuallyEditable, // Conditions
-        currentRoomInitialMeterReading, currentRoomElectricityRate, // For electricity calc
-        currentBillState.value.amountPaid, // React to payment changes (though payments directly update currentBillState)
-        currentBillState.value.installments, // React to installment changes
-        showFullRentOverrideCheckbox // React if checkbox visibility changes (though rare after init)
+        applyFullRentOverride,
+        initialRentForThisDialogInstance, fullRoomRent,
+        monthEndMeterReadingString, waterBillString, otherChargesString, otherChargesDescription,
+        wasBillForOccupiedRoomInitially, isMeterReadingActuallyEditable,
+        currentRoomInitialMeterReading, currentRoomElectricityRate,
+        currentBillState.value.installments, // Keep this to react to new payments
+        currentBillState.value.amountPaid,   // Keep this to react to new payments
+        showFullRentOverrideCheckbox
     ) {
-        val previousInstallments = currentBillState.value.installments // Preserve current installments
-        
-        // 1. Determine the definitive override status for THIS calculation cycle
+        // Capture the state at the very beginning of this effect's execution
+        val originalBillSnapshot = currentBillState.value
+
         val definitiveIsFullRentAppliedOverride = if (showFullRentOverrideCheckbox) {
-            applyFullRentOverride // If checkbox is shown, its current state is the authority
+            applyFullRentOverride
         } else {
-            // If checkbox not shown, it means a decision was already made (or not applicable).
-            // Use the original bill's persisted override status, defaulting to false if it was somehow null.
-            bill.isFullRentAppliedOverride ?: false 
+            bill.isFullRentAppliedOverride ?: false
         }
 
-        // 2. Determine the rent to apply based on the definitive override status
         val newRentToApply = if (definitiveIsFullRentAppliedOverride) {
             fullRoomRent
         } else {
-            // If not overriding to full, use the rent the bill was loaded with initially.
-            // This correctly handles cases where pro-rata was applied and accepted, or full rent was already set.
             initialRentForThisDialogInstance
         }
 
-        var tempBill = currentBillState.value.copy(
+        // Start with a copy for modifications
+        var workingBill = originalBillSnapshot.copy(
             rentAtBillingTime = newRentToApply,
-            isFullRentAppliedOverride = definitiveIsFullRentAppliedOverride // Persist the definitive decision
+            isFullRentAppliedOverride = definitiveIsFullRentAppliedOverride
         )
-        tempBill.installments = previousInstallments // Re-apply installments
 
-        // Other bill calculations based on inputs
         if (wasBillForOccupiedRoomInitially) {
-            tempBill = tempBill.copy(
+            workingBill = workingBill.copy(
                 waterBill = waterBillString.toDoubleOrNull() ?: 0.0,
                 otherCharges = otherChargesString.toDoubleOrNull() ?: 0.0,
                 otherChargesDescription = otherChargesDescription.ifBlank { null }
             )
         } else {
-            tempBill = tempBill.copy(waterBill = 0.0, otherCharges = 0.0, otherChargesDescription = null, monthEndMeterReading = null, electricityUnits = 0.0)
+            workingBill = workingBill.copy(
+                waterBill = 0.0, otherCharges = 0.0, otherChargesDescription = null,
+                monthEndMeterReading = null, electricityUnits = 0.0
+            )
         }
 
         if (isMeterReadingActuallyEditable) {
             val newMonthEndReadingDouble = monthEndMeterReadingString.toDoubleOrNull()
-            tempBill = tempBill.copy(monthEndMeterReading = newMonthEndReadingDouble)
+            workingBill = workingBill.copy(monthEndMeterReading = newMonthEndReadingDouble)
             if (currentRoomInitialMeterReading != null && newMonthEndReadingDouble != null && newMonthEndReadingDouble >= currentRoomInitialMeterReading) {
-                tempBill = tempBill.copy(
+                workingBill = workingBill.copy(
                     electricityUnits = newMonthEndReadingDouble - currentRoomInitialMeterReading,
                     electricityRateAtBillingTime = currentRoomElectricityRate
                 )
             } else {
-                tempBill = tempBill.copy(electricityUnits = 0.0, electricityRateAtBillingTime = currentRoomElectricityRate)
+                workingBill = workingBill.copy(electricityUnits = 0.0, electricityRateAtBillingTime = currentRoomElectricityRate)
             }
-        } else { // If meter reading not editable, ensure original values are kept
-            tempBill = tempBill.copy(
+        } else {
+            // If meter reading not editable, ensure original values from the initial bill prop are kept
+            workingBill = workingBill.copy(
                 monthEndMeterReading = bill.monthEndMeterReading,
                 electricityUnits = bill.electricityUnits,
                 electricityRateAtBillingTime = bill.electricityRateAtBillingTime
             )
         }
 
-        tempBill.calculateTotalDue() 
-        currentBillState.value = tempBill
+        // Restore installments and amountPaid from the snapshot *after* all other .copy() operations
+        workingBill.installments = originalBillSnapshot.installments
+        workingBill.amountPaid = originalBillSnapshot.amountPaid // Ensures amountPaid is what it was before this effect ran,
+                                                                 // unless explicitly changed by adding a new payment (handled elsewhere)
+
+        workingBill.calculateTotalDue() // Now calculate totals with correct installments and amountPaid
+        currentBillState.value = workingBill
     }
 
     AlertDialog(
