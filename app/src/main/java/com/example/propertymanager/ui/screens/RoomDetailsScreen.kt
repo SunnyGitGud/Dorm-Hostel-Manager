@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -88,12 +89,12 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlin.math.max
-import androidx.compose.foundation.pager.HorizontalPager // ADDED
-import androidx.compose.foundation.pager.rememberPagerState // ADDED
-import androidx.compose.foundation.ExperimentalFoundationApi // ADDED for Pager
+import androidx.compose.foundation.pager.HorizontalPager 
+import androidx.compose.foundation.pager.rememberPagerState 
+import androidx.compose.foundation.ExperimentalFoundationApi 
 
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class) // ADDED ExperimentalFoundationApi
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class) 
 @Composable
 fun RoomDetailsScreen(
     roomId: Int,
@@ -111,7 +112,7 @@ fun RoomDetailsScreen(
     }
     // --- End Pager State ---
 
-    val displayedBillDetails by roomViewModel.displayedBillDetails.collectAsState() // MODIFIED
+    val displayedBillDetails by roomViewModel.displayedBillDetails.collectAsState() 
 
     // For AddEditBillDialog invocation
     var billIdForDialog by remember { mutableStateOf<Int?>(null) }
@@ -147,19 +148,15 @@ fun RoomDetailsScreen(
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) }
     val shortDateFormat = remember { SimpleDateFormat("dd MMM yyyy", Locale.getDefault())}
 
-    // --- MODIFIED LaunchedEffect to use pagerState ---
     LaunchedEffect(pagerState.settledPage, roomId) {
-        if (currentRoomWithTenant != null) { // Ensure room context is available
+        if (currentRoomWithTenant != null) { 
             val targetCalendar = Calendar.getInstance()
-            // pagerState.settledPage == 0 is current month
-            // pagerState.settledPage == 1 is previous month, etc.
             targetCalendar.add(Calendar.MONTH, -pagerState.settledPage)
             val year = targetCalendar.get(Calendar.YEAR)
             val month = targetCalendar.get(Calendar.MONTH) + 1
             roomViewModel.loadBillDetailsForMonth(roomId, year, month)
         }
     }
-    // --- END MODIFICATION ---
 
     LaunchedEffect(currentRoomWithTenant, showTenantInfoDialog, showBillHistoryDialog) {
         if (currentRoomWithTenant != null && (showTenantInfoDialog || showBillHistoryDialog) && allTenantsForRoom.isEmpty()) {
@@ -169,7 +166,7 @@ fun RoomDetailsScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            roomViewModel.clearDisplayedBillDetailsState() // MODIFIED
+            roomViewModel.clearDisplayedBillDetailsState() 
         }
     }
 
@@ -187,9 +184,6 @@ fun RoomDetailsScreen(
                         IconButton(onClick = {
                             coroutineScope.launch {
                                 val calendar = Calendar.getInstance()
-                                // For Edit Room, we might want to use the displayed bill's month/year
-                                // or always operate on the absolute current system month.
-                                // For now, let's assume it refers to the system current month for meter readings.
                                 val year = calendar.get(Calendar.YEAR)
                                 val month = calendar.get(Calendar.MONTH) + 1
                                 val billForCurrentMonth = roomViewModel.getOrCreateBillForRoom(
@@ -231,7 +225,9 @@ fun RoomDetailsScreen(
                 // --- HORIZONTAL PAGER FOR BILLS ---
                 HorizontalPager(
                     state = pagerState,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 20.dp), // MODIFIED for less peek
+                    pageSpacing = 8.dp 
                 ) { pageIndex -> 
                     val billForThisPage = if (pagerState.settledPage == pageIndex) displayedBillDetails else null
 
@@ -292,7 +288,6 @@ fun RoomDetailsScreen(
             }
         }
 
-        // --- AddEditBillDialog Modification ---
         if (finalBillForDialog != null && currentRoomWithTenant != null) {
             val calendar = Calendar.getInstance()
             val systemCurrentYear = calendar.get(Calendar.YEAR)
