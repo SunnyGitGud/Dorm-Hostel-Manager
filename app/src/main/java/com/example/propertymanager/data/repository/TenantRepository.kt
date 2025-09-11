@@ -33,7 +33,7 @@ class TenantRepository(private val tenantDao: TenantDao) {
 
     // Sets the move-out date for a specific tenant
     suspend fun setTenantMoveOutDate(tenantId: Int, moveOutDateTimestamp: Long): Boolean {
-        val tenant = tenantDao.getTenantById(tenantId)
+        val tenant = tenantDao.getTenantById(tenantId) // Internal call
         if (tenant != null) {
             tenant.moveOutDate = moveOutDateTimestamp
             val updatedRows = tenantDao.updateTenant(tenant)
@@ -41,6 +41,12 @@ class TenantRepository(private val tenantDao: TenantDao) {
         }
         return false // Tenant not found or update failed
     }
+
+    // --- NEW FUNCTION TO EXPOSE getTenantById ---
+    suspend fun getTenantById(tenantId: Int): TenantEntity? {
+        return tenantDao.getTenantById(tenantId)
+    }
+    // --- END NEW FUNCTION ---
 
     // Added for import functionality
     suspend fun getTenantByNameAndRoomId(name: String, roomId: Int): TenantEntity? {

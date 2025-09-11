@@ -88,9 +88,12 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlin.math.max
+import androidx.compose.foundation.pager.HorizontalPager // ADDED
+import androidx.compose.foundation.pager.rememberPagerState // ADDED
+import androidx.compose.foundation.ExperimentalFoundationApi // ADDED for Pager
 
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class) // ADDED ExperimentalFoundationApi
 @Composable
 fun RoomDetailsScreen(
     roomId: Int,
@@ -102,9 +105,18 @@ fun RoomDetailsScreen(
         roomsWithTenants.find { it.room.id == roomId }
     }
 
+    // --- Pager State ---
+    val pagerState = rememberPagerState(initialPage = 0) { // Page count for e.g. 20 years
+        240 // 20 years * 12 months
+    }
+    // --- End Pager State ---
+
+    val displayedBillDetails by roomViewModel.displayedBillDetails.collectAsState() // MODIFIED
+
     // For AddEditBillDialog invocation
     var billIdForDialog by remember { mutableStateOf<Int?>(null) }
     var directBillObjectForDialog by remember { mutableStateOf<MonthlyBillEntity?>(null) }
+    
     val billToEditInDialogViaId: MonthlyBillEntity? by key(billIdForDialog) {
         if (billIdForDialog != null) {
             roomViewModel.getBillByIdFlow(billIdForDialog!!).collectAsState(initial = null)
@@ -113,6 +125,7 @@ fun RoomDetailsScreen(
         }
     }
     val finalBillForDialog = billToEditInDialogViaId ?: directBillObjectForDialog
+
 
     var showBillHistoryDialog by remember { mutableStateOf(false) }
     var billHistoryList by remember { mutableStateOf<List<MonthlyBillEntity>>(emptyList()) }
@@ -130,14 +143,23 @@ fun RoomDetailsScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    val currentCalendarMonthBill by roomViewModel.currentCalendarMonthBill.collectAsState()
     val monthYearFormat = remember { SimpleDateFormat("MMMM yyyy", Locale.getDefault()) }
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) }
     val shortDateFormat = remember { SimpleDateFormat("dd MMM yyyy", Locale.getDefault())}
 
-    LaunchedEffect(roomId) {
-        roomViewModel.loadCurrentCalendarMonthBill(roomId)
+    // --- MODIFIED LaunchedEffect to use pagerState ---
+    LaunchedEffect(pagerState.settledPage, roomId) {
+        if (currentRoomWithTenant != null) { // Ensure room context is available
+            val targetCalendar = Calendar.getInstance()
+            // pagerState.settledPage == 0 is current month
+            // pagerState.settledPage == 1 is previous month, etc.
+            targetCalendar.add(Calendar.MONTH, -pagerState.settledPage)
+            val year = targetCalendar.get(Calendar.YEAR)
+            val month = targetCalendar.get(Calendar.MONTH) + 1
+            roomViewModel.loadBillDetailsForMonth(roomId, year, month)
+        }
     }
+    // --- END MODIFICATION ---
 
     LaunchedEffect(currentRoomWithTenant, showTenantInfoDialog, showBillHistoryDialog) {
         if (currentRoomWithTenant != null && (showTenantInfoDialog || showBillHistoryDialog) && allTenantsForRoom.isEmpty()) {
@@ -147,7 +169,7 @@ fun RoomDetailsScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            roomViewModel.clearCurrentCalendarMonthBillState()
+            roomViewModel.clearDisplayedBillDetailsState() // MODIFIED
         }
     }
 
@@ -165,6 +187,9 @@ fun RoomDetailsScreen(
                         IconButton(onClick = {
                             coroutineScope.launch {
                                 val calendar = Calendar.getInstance()
+                                // For Edit Room, we might want to use the displayed bill's month/year
+                                // or always operate on the absolute current system month.
+                                // For now, let's assume it refers to the system current month for meter readings.
                                 val year = calendar.get(Calendar.YEAR)
                                 val month = calendar.get(Calendar.MONTH) + 1
                                 val billForCurrentMonth = roomViewModel.getOrCreateBillForRoom(
@@ -191,33 +216,42 @@ fun RoomDetailsScreen(
         Column(
             modifier = Modifier
                 .padding(innerPadding)
-                .padding(16.dp)
+                .padding(horizontal = 16.dp) 
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
         ) {
             if (currentRoomWithTenant == null) {
                 Text("Room not found.")
             } else {
-                Text("Details for Room: ${currentRoomWithTenant.room.name}", style = MaterialTheme.typography.headlineSmall)
-                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "Details for Room: ${currentRoomWithTenant.room.name}",
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
 
-                CombinedBillActionsCard(
-                    currentMonthBill = currentCalendarMonthBill,
-                    monthYearFormat = monthYearFormat,
-                    currencyFormat = currencyFormat,
-                    shortDateFormat = shortDateFormat,
-                    onManageCurrentMonthBillClick = {
-                        currentCalendarMonthBill?.let { bill ->
-                            if (bill.id != 0) {
-                                billIdForDialog = bill.id
+                // --- HORIZONTAL PAGER FOR BILLS ---
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxWidth()
+                ) { pageIndex -> 
+                    val billForThisPage = if (pagerState.settledPage == pageIndex) displayedBillDetails else null
+
+                    CombinedBillActionsCard(
+                        displayedBill = billForThisPage,
+                        monthYearFormat = monthYearFormat,
+                        currencyFormat = currencyFormat,
+                        shortDateFormat = shortDateFormat,
+                        onManageBillClick = { billToManage ->
+                            if (billToManage.id != 0) {
+                                billIdForDialog = billToManage.id
                                 directBillObjectForDialog = null
                             } else {
-                                directBillObjectForDialog = bill
+                                directBillObjectForDialog = billToManage
                                 billIdForDialog = null
                             }
                         }
-                    }
-                )
+                    )
+                }
+                // --- END HORIZONTAL PAGER ---
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -258,14 +292,17 @@ fun RoomDetailsScreen(
             }
         }
 
+        // --- AddEditBillDialog Modification ---
         if (finalBillForDialog != null && currentRoomWithTenant != null) {
+            val calendar = Calendar.getInstance()
+            val systemCurrentYear = calendar.get(Calendar.YEAR)
+            val systemCurrentMonth = calendar.get(Calendar.MONTH) + 1
+
             AddEditBillDialog(
                 bill = finalBillForDialog!!,
                 roomViewModel = roomViewModel,
                 roomName = currentRoomWithTenant.room.name,
-                isCurrentActiveBill = currentCalendarMonthBill?.let {
-                    it.year == finalBillForDialog!!.year && it.month == finalBillForDialog!!.month
-                } ?: false,
+                isCurrentActiveBill = finalBillForDialog!!.year == systemCurrentYear && finalBillForDialog!!.month == systemCurrentMonth,
                 currentRoomInitialMeterReading = currentRoomWithTenant.room.initialMeterReading,
                 currentRoomElectricityRate = currentRoomWithTenant.room.electricityRatePerUnit,
                 fullRoomRent = currentRoomWithTenant.room.rent,
@@ -350,83 +387,93 @@ fun RoomDetailsScreen(
 
 @Composable
 fun CombinedBillActionsCard(
-    currentMonthBill: MonthlyBillEntity?,
+    displayedBill: MonthlyBillEntity?,
     monthYearFormat: SimpleDateFormat,
     currencyFormat: NumberFormat,
-    shortDateFormat: SimpleDateFormat, // Added for installment dates
-    onManageCurrentMonthBillClick: () -> Unit
+    shortDateFormat: SimpleDateFormat,
+    onManageBillClick: (MonthlyBillEntity) -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 8.dp, horizontal = 4.dp), 
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            val titleText = if (displayedBill != null) {
+                val billCalendar = Calendar.getInstance().apply { set(displayedBill.year, displayedBill.month - 1, 1) }
+                "Bill for ${monthYearFormat.format(billCalendar.time)}"
+            } else {
+                "Bill Status"
+            }
             Text(
-                text = "Current Month Bill Status", 
+                text = titleText,
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
-                    .padding(bottom = 8.dp) // Adjusted padding
+                    .padding(bottom = 8.dp)
                     .align(Alignment.CenterHorizontally)
             )
-            HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp)) // Added Divider and its padding
+            HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp))
 
-            if (currentMonthBill != null) {
-                val currentCal = Calendar.getInstance()
-                val billPeriod = monthYearFormat.format(Calendar.getInstance().apply { set(currentMonthBill.year, currentMonthBill.month - 1, 1) }.time)
-                
-                InfoRow(icon = Icons.Filled.History, label = "Period", value = billPeriod)
+            if (displayedBill != null) {
+                val billPeriodCal = Calendar.getInstance().apply { set(displayedBill.year, displayedBill.month - 1, 1) }
+                val billPeriodText = monthYearFormat.format(billPeriodCal.time)
 
-                if (currentMonthBill.id == 0 && 
-                    currentMonthBill.year == currentCal.get(Calendar.YEAR) && 
-                    currentMonthBill.month == currentCal.get(Calendar.MONTH) +1) {
-                    InfoRow(icon = Icons.Filled.Info, label = "Status", value = "Not yet generated", valueColor = MaterialTheme.colorScheme.secondary)
-                } else if (currentMonthBill.id != 0) { // Bill is generated
+                InfoRow(icon = Icons.Filled.History, label = "Period", value = billPeriodText)
+
+                val isPlaceholderForItsMonth = displayedBill.id == 0 &&
+                                               displayedBill.tenantNameAtBillingTime == "Not Occupied"
+
+                if (isPlaceholderForItsMonth) {
+                     InfoRow(icon = Icons.Filled.Info, label = "Status", value = "Not yet generated", valueColor = MaterialTheme.colorScheme.secondary)
+                } else if (displayedBill.id != 0) { 
                     InfoRow(icon = Icons.Filled.Info, label = "Status", value = "Generated", valueColor = MaterialTheme.colorScheme.primary)
-                    InfoRow(icon = Icons.Filled.AttachMoney, label = "Total Due", value = currencyFormat.format(currentMonthBill.totalAmountDue))
-                    InfoRow(icon = Icons.Filled.Payments, label = "Amount Paid", value = currencyFormat.format(currentMonthBill.amountPaid))
+                    InfoRow(icon = Icons.Filled.AttachMoney, label = "Total Due", value = currencyFormat.format(displayedBill.totalAmountDue))
+                    InfoRow(icon = Icons.Filled.Payments, label = "Amount Paid", value = currencyFormat.format(displayedBill.amountPaid))
                     
-                    val balanceDue = currentMonthBill.totalAmountDue - currentMonthBill.amountPaid
-                    if (currentMonthBill.isFullyPaid) {
-                        InfoRow(icon = Icons.Filled.CheckCircleOutline, label = "Payment", value = "Fully Paid on ${currentMonthBill.paymentDate?.let { shortDateFormat.format(Date(it)) } ?: "N/A"}", valueColor = Color(0xFF008000) /* Green */)
-                    } else if (balanceDue > 0) {
+                    val balanceDue = displayedBill.totalAmountDue - displayedBill.amountPaid
+                    if (displayedBill.isFullyPaid) {
+                        InfoRow(icon = Icons.Filled.CheckCircleOutline, label = "Payment", value = "Fully Paid on ${displayedBill.paymentDate?.let { shortDateFormat.format(Date(it)) } ?: "N/A"}", valueColor = Color(0xFF008000))
+                    } else if (balanceDue > 0.001) { 
                         InfoRow(icon = Icons.Filled.ErrorOutline, label = "Balance Due", value = currencyFormat.format(balanceDue), valueColor = MaterialTheme.colorScheme.error)
-                    } else {
-                         InfoRow(icon = Icons.Filled.CheckCircleOutline, label = "Balance", value = "Settled", valueColor = Color(0xFF008000) /* Green */)
+                    } else if (balanceDue < -0.001) { 
+                        InfoRow(icon = Icons.Filled.CheckCircleOutline, label = "Advance", value = currencyFormat.format(-balanceDue), valueColor = Color(0xFF38761D))
+                    } else { 
+                         InfoRow(icon = Icons.Filled.CheckCircleOutline, label = "Balance", value = "Settled", valueColor = Color(0xFF008000))
                     }
 
-                    // Payment History Section
-                    if (currentMonthBill.installments.isNotEmpty()) {
+                    if (displayedBill.installments.isNotEmpty()) {
                         HorizontalDivider(modifier = Modifier.padding(top = 10.dp, bottom = 8.dp))
                         Text("Payment History:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 6.dp))
-                        currentMonthBill.installments.forEach {
+                        displayedBill.installments.forEach {
                             Row(modifier = Modifier.fillMaxWidth().padding(start = 28.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) { 
                                 Text("${currencyFormat.format(it.amount)} on ${shortDateFormat.format(Date(it.date))}", style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                     } else {
                          HorizontalDivider(modifier = Modifier.padding(top = 10.dp, bottom = 8.dp))
-                         Text("No payments recorded for this month.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp) )
+                         Text("No payments recorded for this bill period.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp) )
                     }
 
-                } else {
-                     Text("Status: (Data for a different period: $billPeriod)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else { 
+                     Text("Status: Details for $billPeriodText", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
-                    onClick = onManageCurrentMonthBillClick,
+                    onClick = { onManageBillClick(displayedBill) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Filled.Edit, contentDescription = "Manage Bill Icon", modifier = Modifier.padding(end = 8.dp))
-                    Text(if (currentMonthBill.id == 0) "Generate & Manage Bill" else "Manage This Bill", fontSize = 16.sp)
+                    Text(if (displayedBill.id == 0) "Generate & Manage Bill" else "Manage This Bill", fontSize = 16.sp)
                 }
 
             } else {
-                Text("Current month's bill status is loading or unavailable.", modifier = Modifier.padding(top = 8.dp).align(Alignment.CenterHorizontally))
+                Box(modifier = Modifier.fillMaxWidth().height(200.dp).padding(16.dp), contentAlignment = Alignment.Center) {
+                    Text("Loading bill details for this month...", style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
     }
@@ -434,7 +481,7 @@ fun CombinedBillActionsCard(
 
 @Composable
 fun InfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String, valueColor: Color = Color.Unspecified) {
-    Row( // Outer Row for Icon and Text content
+    Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp) 
     ) {
@@ -446,7 +493,6 @@ fun InfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String
         )
         Spacer(modifier = Modifier.width(12.dp)) 
 
-        // Inner Row for label and value, to use weights for alignment
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically 
