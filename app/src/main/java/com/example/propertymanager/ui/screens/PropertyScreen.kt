@@ -80,9 +80,9 @@ import com.example.propertymanager.ui.common.SettingsAction
 import com.example.propertymanager.ui.common.SettingsDrawerContent
 import com.example.propertymanager.ui.viewmodel.PropertyFinancialSummary
 import com.example.propertymanager.ui.viewmodel.PropertyViewModel
-import com.example.propertymanager.ui.viewmodel.ThemeViewModel // ADDED
+import com.example.propertymanager.ui.viewmodel.ThemeViewModel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay // ADDED FOR DELAY
+import kotlinx.coroutines.delay
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
@@ -134,21 +134,21 @@ fun PropertyScreen(
     val currentLanguageCodeFromViewModel by viewModel.currentLanguageCode.collectAsState()
     val languageChangeRequiresRestart by viewModel.languageChangeRequiresRestart.collectAsState()
     val showProrateRentDialog by viewModel.showProrateRentDialog.collectAsState()
-    val prorationStatusMessage by viewModel.prorationStatusMessage.collectAsState() // ADDED for Toast
+    val prorationStatusMessage by viewModel.prorationStatusMessage.collectAsState()
 
     var showAddPropertyDialog by remember { mutableStateOf(false) }
     var selectedPropertyForOptions by remember { mutableStateOf<PropertyEntity?>(null) }
     var showPropertyOptionsDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
-    var showLanguageDialog by remember { mutableStateOf(false) } 
+    var showLanguageDialog by remember { mutableStateOf(false) }
 
     var exportYear by remember { mutableStateOf(Calendar.getInstance().get(Calendar.YEAR)) }
-    var exportMonth by remember { mutableStateOf<Int?>(Calendar.getInstance().get(Calendar.MONTH) + 1) } 
+    var exportMonth by remember { mutableStateOf<Int?>(Calendar.getInstance().get(Calendar.MONTH) + 1) }
 
-    val context = LocalContext.current // Context defined for the entire PropertyScreen
+    val context = LocalContext.current
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    var isDrawerActionInProgress by remember { mutableStateOf(false) } // MODIFIED
+    var isDrawerActionInProgress by remember { mutableStateOf(false) }
 
     val createCsvLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
@@ -160,9 +160,9 @@ fun PropertyScreen(
                         writer.write(exportCsvData ?: "")
                     }
                 }
-                Toast.makeText(context, "CSV exported successfully", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, context.getString(R.string.toast_csv_exported_successfully), Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
-                Toast.makeText(context, "Error exporting CSV: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, context.getString(R.string.toast_error_exporting_csv, e.message ?: ""), Toast.LENGTH_LONG).show()
             }
         }
         viewModel.clearExportData()
@@ -178,12 +178,12 @@ fun PropertyScreen(
                         writer.write(exportTextData ?: "")
                     }
                 }
-                Toast.makeText(context, "Text file exported successfully", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, context.getString(R.string.toast_text_exported_successfully), Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
-                Toast.makeText(context, "Error exporting text file: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, context.getString(R.string.toast_error_exporting_text, e.message ?: ""), Toast.LENGTH_LONG).show()
             }
         }
-        viewModel.clearExportTextData() 
+        viewModel.clearExportTextData()
     }
 
     val importCsvLauncher = rememberLauncherForActivityResult(
@@ -198,7 +198,7 @@ fun PropertyScreen(
                     }
                 }
             } catch (e: Exception) {
-                Toast.makeText(context, "Error importing CSV: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, context.getString(R.string.toast_error_importing_csv, e.message ?: ""), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -224,11 +224,10 @@ fun PropertyScreen(
     LaunchedEffect(importStatus) {
         importStatus?.let {
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
-            viewModel.clearImportStatus() 
+            viewModel.clearImportStatus()
         }
     }
 
-    // ADDED: LaunchedEffect for prorationStatusMessage
     LaunchedEffect(prorationStatusMessage) {
         prorationStatusMessage?.let {
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
@@ -239,7 +238,7 @@ fun PropertyScreen(
     if (languageChangeRequiresRestart) {
         AlertDialog(
             onDismissRequest = {
-                viewModel.consumedLanguageChangeRestartSignal() 
+                viewModel.consumedLanguageChangeRestartSignal()
             },
             title = { Text(stringResource(R.string.restart_required_title)) },
             text = { Text(stringResource(R.string.restart_required_message)) },
@@ -274,12 +273,11 @@ fun PropertyScreen(
         drawerState = drawerState,
         drawerContent = {
             SettingsDrawerContent(
-                themeViewModel = themeViewModel, // PASSED themeViewModel
+                themeViewModel = themeViewModel, 
                 onItemSelected = { action ->
                     scope.launch {
-                        drawerState.close() // Close drawer first
+                        drawerState.close()
                     }
-                    // Handle actions after drawer is closed to prevent state issues
                     when (action) {
                         SettingsAction.EXPORT_DATA -> showExportDialog = true
                         SettingsAction.IMPORT_DATA -> importCsvLauncher.launch(arrayOf("text/csv", "text/plain", "application/csv", "text/comma-separated-values"))
@@ -291,7 +289,6 @@ fun PropertyScreen(
                             showLanguageDialog = true
                             Log.d("SettingsDrawer", "Change Language clicked")
                         }
-                        // TOGGLE_DARK_MODE case is removed as it's handled in SettingsDrawerContent directly
                     }
                 }
             )
@@ -300,14 +297,14 @@ fun PropertyScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(stringResource(R.string.properties_title)) }, 
+                    title = { Text(stringResource(R.string.properties_title)) },
                     navigationIcon = {
                         IconButton(onClick = { 
                             if (!isDrawerActionInProgress) {
                                 isDrawerActionInProgress = true
                                 scope.launch {
                                     try {
-                                        kotlinx.coroutines.delay(50L) // CHANGED FROM yield()
+                                        delay(50L)
                                         if (drawerState.isClosed) {
                                             drawerState.open()
                                         } else {
@@ -323,7 +320,6 @@ fun PropertyScreen(
                         }
                     },
                     actions = {
-                        // Moved Import/Export to drawer
                     }
                 )
             },
@@ -390,8 +386,8 @@ fun PropertyScreen(
                     onDismiss = { showExportDialog = false },
                     onConfirmExport = { yearValue, monthValue, formatValue -> 
                         exportYear = yearValue
-                        exportMonth = monthValue 
-                        viewModel.triggerExportData(yearValue, monthValue, formatValue) 
+                        exportMonth = monthValue
+                        viewModel.triggerExportData(yearValue, monthValue, formatValue)
                         showExportDialog = false
                     }
                 )
@@ -399,22 +395,20 @@ fun PropertyScreen(
 
             if (showLanguageDialog) {
                 LanguageSelectionDialog(
-                    currentLanguageCode = currentLanguageCodeFromViewModel, // Use ViewModel's state
+                    currentLanguageCode = currentLanguageCodeFromViewModel,
                     onLanguageSelected = { selectedOption ->
                         viewModel.setLanguage(selectedOption.code)
-                        // Restart dialog will be shown via languageChangeRequiresRestart state
                         showLanguageDialog = false
                     },
                     onDismiss = { showLanguageDialog = false }
                 )
             }
 
-            // ADDED: Prorate Rent Dialog after import
             if (showProrateRentDialog) {
                 AlertDialog(
                     onDismissRequest = { viewModel.userAcknowledgedProrateDialog() },
-                    title = { Text(stringResource(R.string.prorate_rent_dialog_title)) }, // Needs R.string.prorate_rent_dialog_title
-                    text = { Text(stringResource(R.string.prorate_rent_dialog_message)) },   // Needs R.string.prorate_rent_dialog_message
+                    title = { Text(stringResource(R.string.prorate_rent_dialog_title)) },
+                    text = { Text(stringResource(R.string.prorate_rent_dialog_message)) },
                     confirmButton = {
                         TextButton(onClick = { viewModel.onConfirmProrateRent() }) {
                             Text(stringResource(R.string.yes))
@@ -435,18 +429,18 @@ fun PropertyScreen(
 @Composable
 fun ExportDataDialog(
     onDismiss: () -> Unit,
-    onConfirmExport: (year: Int, month: Int?, format: ExportFormat) -> Unit 
+    onConfirmExport: (year: Int, month: Int?, format: ExportFormat) -> Unit
 ) {
-    val context = LocalContext.current // Added context here
+    val context = LocalContext.current
     val currentYear = Calendar.getInstance().get(Calendar.YEAR)
     val currentMonth = Calendar.getInstance().get(Calendar.MONTH) + 1
 
     var yearText by remember { mutableStateOf(currentYear.toString()) }
     var monthText by remember { mutableStateOf(currentMonth.toString()) }
-    var yearError by remember { mutableStateOf<String?>(null) } 
-    var monthError by remember { mutableStateOf<String?>(null) } 
+    var yearError by remember { mutableStateOf<String?>(null) }
+    var monthError by remember { mutableStateOf<String?>(null) }
     var selectedFormat by remember { mutableStateOf(ExportFormat.CSV) }
-    var selectedScope by remember { mutableStateOf(ExportScope.SpecificMonth) } 
+    var selectedScope by remember { mutableStateOf(ExportScope.SpecificMonth) }
 
     val formats = ExportFormat.values()
     val scopes = ExportScope.values()
@@ -536,10 +530,13 @@ fun ExportDataDialog(
                         ) {
                             RadioButton(
                                 selected = (format == selectedFormat),
-                                onClick = null 
+                                onClick = null
                             )
                             Text(
-                                text = format.name, // Format name can remain as is, not typically translated
+                                text = when (format) {
+                                    ExportFormat.CSV -> stringResource(R.string.export_format_csv)
+                                    ExportFormat.TEXT -> stringResource(R.string.export_format_text)
+                                },
                                 style = MaterialTheme.typography.bodyLarge,
                                 modifier = Modifier.padding(start = 16.dp)
                             )
@@ -556,18 +553,18 @@ fun ExportDataDialog(
                     var isValid = true
 
                     if (year == null || year < 1900 || year > 2200) {
-                        yearError = context.getString(R.string.invalid_year) 
+                        yearError = context.getString(R.string.invalid_year)
                         isValid = false
                     }
 
                     if (selectedScope == ExportScope.SpecificMonth) {
                         finalMonth = monthText.toIntOrNull()
                         if (finalMonth == null || finalMonth !in 1..12) {
-                            monthError = context.getString(R.string.invalid_month) 
+                            monthError = context.getString(R.string.invalid_month)
                             isValid = false
                         }
                     } else {
-                        monthError = null 
+                        monthError = null
                     }
 
                     if (isValid && year != null) {
@@ -597,7 +594,7 @@ fun PropertyItem(
     onLongClick: () -> Unit
 ) {
     var isExpanded by remember { mutableStateOf(false) }
-    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) } // Consider locale for currency format
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build()) } 
 
     Card(
         modifier = Modifier
@@ -618,21 +615,21 @@ fun PropertyItem(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = property.name, // Property name is dynamic data
+                    text = property.name,
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.weight(1f, fill = false)
                 )
                 IconButton(onClick = { isExpanded = !isExpanded }) {
                     Icon(
                         imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                        contentDescription = if (isExpanded) "Collapse" else "Expand", // These could be string resources too
+                        contentDescription = if (isExpanded) stringResource(R.string.content_description_collapse) else stringResource(R.string.content_description_expand),
                         modifier = Modifier.size(30.dp)
                     )
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = property.address, // Property address is dynamic data
+                text = property.address,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -678,7 +675,6 @@ fun PropertyItem(
                 Spacer(modifier = Modifier.height(10.dp))
                 if (!isExpanded) {
                     Text(
-                        // Using stringResource for pluralization if available, otherwise manual concatenation
                         text = stringResource(R.string.rooms_count, roomSummaries.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -689,7 +685,7 @@ fun PropertyItem(
 
             AnimatedVisibility(visible = isExpanded) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) 
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                     Text(
                         text = stringResource(R.string.rooms_label),
                         style = MaterialTheme.typography.titleMedium,
@@ -699,7 +695,7 @@ fun PropertyItem(
                         val statusColor = when (roomSummary.statusType) {
                             BillStatusType.DUE -> MaterialTheme.colorScheme.error
                             BillStatusType.ADVANCE -> MaterialTheme.colorScheme.secondary
-                            BillStatusType.PAID -> MaterialTheme.colorScheme.primary 
+                            BillStatusType.PAID -> MaterialTheme.colorScheme.primary
                             BillStatusType.VACANT, BillStatusType.NO_BILLS_YET, BillStatusType.GENERAL_INFO -> MaterialTheme.colorScheme.onSurfaceVariant
                         }
                         val statusIcon: ImageVector = when (roomSummary.statusType) {
@@ -707,7 +703,7 @@ fun PropertyItem(
                             BillStatusType.ADVANCE -> Icons.Filled.CheckCircleOutline
                             BillStatusType.PAID -> Icons.Filled.Verified
                             BillStatusType.VACANT -> Icons.Filled.Info
-                            BillStatusType.NO_BILLS_YET -> Icons.AutoMirrored.Filled.ReceiptLong 
+                            BillStatusType.NO_BILLS_YET -> Icons.AutoMirrored.Filled.ReceiptLong
                             BillStatusType.GENERAL_INFO -> Icons.Filled.Info
                         }
 
@@ -719,13 +715,13 @@ fun PropertyItem(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Outlined.MeetingRoom,
-                                    contentDescription = stringResource(R.string.rooms_label), // Content description for Room Icon
+                                    contentDescription = stringResource(R.string.rooms_label),
                                     modifier = Modifier.size(20.dp),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = roomSummary.roomName, // Dynamic data
+                                    text = roomSummary.roomName,
                                     style = MaterialTheme.typography.labelLarge
                                 )
                             }
@@ -733,13 +729,13 @@ fun PropertyItem(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Outlined.Person,
-                                    contentDescription = "Tenant", // Could be stringResource(R.string.tenant_label)
+                                    contentDescription = stringResource(R.string.content_description_tenant_icon),
                                     modifier = Modifier.size(20.dp),
                                     tint = if (roomSummary.tenantName != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = roomSummary.tenantName ?: "N/A", 
+                                    text = roomSummary.tenantName ?: stringResource(R.string.text_na),
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
@@ -747,15 +743,15 @@ fun PropertyItem(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = statusIcon,
-                                    contentDescription = roomSummary.statusText, // Status text is already localized from ViewModel (ideally)
+                                    contentDescription = roomSummary.statusText, // This comes from ViewModel, assumed to be already localized or a status code
                                     modifier = Modifier.size(20.dp),
-                                    tint = statusColor 
+                                    tint = statusColor
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = roomSummary.statusText, // Status text is already localized from ViewModel (ideally)
+                                    text = roomSummary.statusText, // This comes from ViewModel, assumed to be already localized or a status code
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = statusColor, 
+                                    color = statusColor,
                                     fontWeight = FontWeight.Medium
                                 )
                             }
@@ -767,7 +763,7 @@ fun PropertyItem(
             val spacerHeight = if (isExpanded && roomSummaries.isNotEmpty()) 4.dp else 12.dp
             Spacer(modifier = Modifier.height(spacerHeight))
 
-            HorizontalDivider(modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) 
+            HorizontalDivider(modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
             OutlinedButton(
                 onClick = onViewDetailsClick,
                 modifier = Modifier.fillMaxWidth()
@@ -784,7 +780,7 @@ fun AddPropertyDialog(
     onDismiss: () -> Unit,
     onAddProperty: (name: String, address: String) -> Unit
 ) {
-    val context = LocalContext.current // Added context here
+    val context = LocalContext.current
     var name by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
     var nameError by remember { mutableStateOf<String?>(null) }
@@ -825,11 +821,11 @@ fun AddPropertyDialog(
                 onClick = {
                     var valid = true
                     if (name.isBlank()) {
-                        nameError = context.getString(R.string.name_cannot_be_empty) 
+                        nameError = context.getString(R.string.name_cannot_be_empty)
                         valid = false
                     }
                     if (address.isBlank()) {
-                        addressError = context.getString(R.string.address_cannot_be_empty) 
+                        addressError = context.getString(R.string.address_cannot_be_empty)
                         valid = false
                     }
                     if (valid) {
@@ -856,7 +852,7 @@ fun PropertyOptionsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.options_for_property, property.name)) }, // Property name is dynamic
+        title = { Text(stringResource(R.string.options_for_property, property.name)) },
         text = {
             Column {
                 TextButton(onClick = {

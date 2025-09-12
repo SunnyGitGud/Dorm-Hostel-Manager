@@ -4,8 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable 
-import androidx.compose.foundation.gestures.detectTapGestures 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,8 +58,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.pointerInput 
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext // ADDED for Intent
+import androidx.compose.ui.res.stringResource
+import com.example.propertymanager.R
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -85,16 +87,17 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
 
     var selectedRoomForOptions by remember { mutableStateOf<RoomWithTenant?>(null) }
     var showRoomOptionsDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Scaffold(
-        topBar = { 
+        topBar = {
             TopAppBar(
-                title = { Text("Rooms") },
+                title = { Text(stringResource(R.string.rooms_screen_title)) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
+                            contentDescription = stringResource(R.string.content_description_back)
                         )
                     }
                 }
@@ -102,7 +105,7 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddRoomDialog = true }) {
-                Icon(Icons.Filled.Add, contentDescription = "Add Room")
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.fab_add_room_content_description))
             }
         }
     ) { innerPadding ->
@@ -114,7 +117,7 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
             if (roomsWithTenants.isEmpty()) {
                 item {
                     Text(
-                        "No rooms found. Click the '+' button to add one.",
+                        stringResource(R.string.rooms_screen_no_rooms_found),
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodyLarge
                     )
@@ -124,7 +127,7 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
                     RoomItem(
                         roomWithTenant = roomWithTenant,
                         billStatusSummary = roomBillSummaries[roomWithTenant.room.id],
-                        onAddEditTenant = { 
+                        onAddEditTenant = {
                             selectedRoomForTenantAction = it
                             showAddEditTenantDialog = true
                         },
@@ -135,7 +138,7 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
                         onViewDetails = { _, rId ->
                             navController.navigate("room_details/${roomWithTenant.room.propertyId}/$rId")
                         },
-                        onLongClick = { 
+                        onLongClick = {
                             selectedRoomForOptions = roomWithTenant
                             showRoomOptionsDialog = true
                         }
@@ -152,8 +155,8 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
                     val rent = rentString.toDoubleOrNull()
                     val electricityRate = electricityRateString.toDoubleOrNull()
                     val initialMeterReading = initialMeterReadingString.toDoubleOrNull()
-                    
-                    if (rent != null && electricityRate != null) { 
+
+                    if (rent != null && electricityRate != null) {
                         roomViewModel.addRoom(name, rent, electricityRate, initialMeterReading)
                         showAddRoomDialog = false
                     }
@@ -179,7 +182,7 @@ fun RoomScreen(propertyId: Int, roomViewModel: RoomViewModel, navController: Nav
         if (showConfirmRemoveTenantDialog && tenantPendingRemoval != null) {
             val tenantIdToRemove = tenantPendingRemoval?.tenant?.id
             ConfirmRemoveTenantDialog(
-                tenantName = tenantPendingRemoval!!.tenant?.name ?: "Unknown Tenant",
+                tenantName = tenantPendingRemoval!!.tenant?.name ?: stringResource(R.string.unknown_tenant),
                 roomName = tenantPendingRemoval!!.room.name,
                 onDismiss = {
                     showConfirmRemoveTenantDialog = false
@@ -225,10 +228,10 @@ fun RoomItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .pointerInput(Unit) { 
+            .pointerInput(Unit) {
                 detectTapGestures(
                     onLongPress = { onLongClick() },
-                    onTap = { isExpanded = !isExpanded } 
+                    onTap = { isExpanded = !isExpanded }
                 )
             },
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
@@ -240,29 +243,29 @@ fun RoomItem(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween 
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Room: ${roomWithTenant.room.name}", 
+                    text = stringResource(R.string.room_item_title, roomWithTenant.room.name),
                     style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.weight(1f, fill = false) 
+                    modifier = Modifier.weight(1f, fill = false)
                 )
-                
+
                 if (billStatusSummary != null && (billStatusSummary.isDue || billStatusSummary.isAdvance)) {
                     val statusText = currencyFormat.format(billStatusSummary.displayAmount)
-                    val backgroundColor = if (billStatusSummary.isDue) MaterialTheme.colorScheme.errorContainer 
+                    val backgroundColor = if (billStatusSummary.isDue) MaterialTheme.colorScheme.errorContainer
                                           else MaterialTheme.colorScheme.secondaryContainer
-                    val textColor = if (billStatusSummary.isDue) MaterialTheme.colorScheme.onErrorContainer 
+                    val textColor = if (billStatusSummary.isDue) MaterialTheme.colorScheme.onErrorContainer
                                     else MaterialTheme.colorScheme.onSecondaryContainer
 
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(percent = 50)) 
+                            .clip(RoundedCornerShape(percent = 50))
                             .background(backgroundColor)
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = if (billStatusSummary.isDue) "Due: $statusText" else "Adv: $statusText",
+                            text = if (billStatusSummary.isDue) stringResource(R.string.room_item_status_due, statusText) else stringResource(R.string.room_item_status_advance, statusText),
                             color = textColor,
                             style = MaterialTheme.typography.labelLarge
                         )
@@ -275,62 +278,62 @@ fun RoomItem(
             AnimatedVisibility(visible = isExpanded) {
                 Column {
                     Spacer(modifier = Modifier.height(10.dp))
-                    
+
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.CurrencyRupee, contentDescription = "Rent", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.CurrencyRupee, contentDescription = stringResource(R.string.content_description_rent), modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "Rent: ${currencyFormat.format(roomWithTenant.room.rent)}", 
+                            text = stringResource(R.string.room_item_rent_details, currencyFormat.format(roomWithTenant.room.rent)),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Bolt, contentDescription = "Electricity Rate", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Outlined.Bolt, contentDescription = stringResource(R.string.content_description_electricity_rate), modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "Elec. Rate: ${currencyFormat.format(roomWithTenant.room.electricityRatePerUnit)}/unit", 
+                            text = stringResource(R.string.room_item_electricity_rate_details, currencyFormat.format(roomWithTenant.room.electricityRatePerUnit)),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                     roomWithTenant.room.initialMeterReading?.let {
                         Spacer(modifier = Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.Speed, contentDescription = "Initial Meter Reading", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.Speed, contentDescription = stringResource(R.string.content_description_initial_meter_reading), modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = "Initial Reading: $it units on ${formatDate(roomWithTenant.room.initialMeterReadingDate)}",
+                                text = stringResource(R.string.room_item_initial_reading_details, it.toString(), formatDate(roomWithTenant.room.initialMeterReadingDate)),
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp)) 
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        "Tenant Info:", 
+                        stringResource(R.string.room_item_tenant_info_title),
                         style = MaterialTheme.typography.titleMedium
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    if (roomWithTenant.tenant != null && roomWithTenant.tenant.moveOutDate == null) { 
+                    if (roomWithTenant.tenant != null && roomWithTenant.tenant.moveOutDate == null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.Person, contentDescription = "Tenant Name", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.Person, contentDescription = stringResource(R.string.content_description_tenant_name), modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Name: ${roomWithTenant.tenant.name}", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.room_item_tenant_name_details, roomWithTenant.tenant.name), style = MaterialTheme.typography.bodyMedium)
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.Phone, contentDescription = "Tenant Mobile", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.Phone, contentDescription = stringResource(R.string.content_description_tenant_mobile), modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Mobile: ${roomWithTenant.tenant.mobile}", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.room_item_tenant_mobile_details, roomWithTenant.tenant.mobile), style = MaterialTheme.typography.bodyMedium)
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.CalendarToday, contentDescription = "Move-in Date", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.CalendarToday, contentDescription = stringResource(R.string.content_description_move_in_date), modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Move-in: ${formatDate(roomWithTenant.tenant.moveInDate)}", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.room_item_move_in_date_details, formatDate(roomWithTenant.tenant.moveInDate)), style = MaterialTheme.typography.bodyMedium)
                         }
-                        
+
                         Spacer(modifier = Modifier.height(12.dp))
                         // HORIZONTAL BUTTONS ROW
                         Row(
@@ -341,9 +344,9 @@ fun RoomItem(
                                 onClick = { onRemoveTenant(roomWithTenant) },
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Move Out", modifier = Modifier.size(ButtonDefaults.IconSize))
+                                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.content_description_move_out), modifier = Modifier.size(ButtonDefaults.IconSize))
                                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                                Text("Move Out")
+                                Text(stringResource(R.string.button_move_out))
                             }
 
                             val tenantMobile = roomWithTenant.tenant.mobile
@@ -357,44 +360,44 @@ fun RoomItem(
                                 ) {
                                     Icon(
                                         Icons.Filled.Call,
-                                        contentDescription = "Call Tenant",
+                                        contentDescription = stringResource(R.string.content_description_call_tenant),
                                         modifier = Modifier.size(ButtonDefaults.IconSize)
                                     )
                                     Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                                    Text("Call") // Shortened for space, could be Call Tenant Name if preferred
+                                    Text(stringResource(R.string.button_call))
                                 }
                             }
                         }
 
                     } else if (roomWithTenant.tenant != null && roomWithTenant.tenant.moveOutDate != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.Person, contentDescription = "Tenant Name", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.Person, contentDescription = stringResource(R.string.content_description_tenant_name), modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Name: ${roomWithTenant.tenant.name} (Moved Out)", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.room_item_tenant_name_moved_out_details, roomWithTenant.tenant.name), style = MaterialTheme.typography.bodyMedium)
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.CalendarToday, contentDescription = "Move-out Date", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.CalendarToday, contentDescription = stringResource(R.string.content_description_move_out_date), modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Move-out: ${formatDate(roomWithTenant.tenant.moveOutDate)}", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.room_item_move_out_date_details, formatDate(roomWithTenant.tenant.moveOutDate)), style = MaterialTheme.typography.bodyMedium)
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         Button(onClick = { onAddEditTenant(roomWithTenant) }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Filled.Add, contentDescription = "Add New Tenant", modifier = Modifier.size(ButtonDefaults.IconSize))
+                            Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.content_description_add_new_tenant), modifier = Modifier.size(ButtonDefaults.IconSize))
                             Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                            Text("Add New Tenant")
+                            Text(stringResource(R.string.button_add_new_tenant))
                         }
-                    } else { 
+                    } else {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.PersonOff, contentDescription = "No Tenant", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.PersonOff, contentDescription = stringResource(R.string.content_description_no_tenant), modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("No tenant assigned.", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.room_item_no_tenant_assigned), style = MaterialTheme.typography.bodyMedium)
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         Button(onClick = { onAddEditTenant(roomWithTenant) }, modifier = Modifier.fillMaxWidth()) {
-                             Icon(Icons.Filled.Add, contentDescription = "Add Tenant", modifier = Modifier.size(ButtonDefaults.IconSize))
+                             Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.content_description_add_tenant), modifier = Modifier.size(ButtonDefaults.IconSize))
                              Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                            Text("Add Tenant")
+                            Text(stringResource(R.string.button_add_tenant))
                         }
                     }
                     Spacer(modifier = Modifier.height(20.dp))
@@ -402,9 +405,9 @@ fun RoomItem(
                         onClick = { onViewDetails(roomWithTenant.room.propertyId, roomWithTenant.room.id) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Filled.ArrowForward, contentDescription = "View Details", modifier = Modifier.size(ButtonDefaults.IconSize))
+                        Icon(Icons.Filled.ArrowForward, contentDescription = stringResource(R.string.content_description_view_room_details), modifier = Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                        Text("View Details / Manage Bills")
+                        Text(stringResource(R.string.button_view_details_manage_bills))
                     }
                 }
             }
@@ -420,27 +423,27 @@ fun RoomOptionsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Options for Room ${roomWithTenant.room.name}") },
+        title = { Text(stringResource(R.string.room_options_dialog_title, roomWithTenant.room.name)) },
         text = {
             Column {
                 TextButton(onClick = {
                     roomViewModel.setRoomHiddenStatus(roomWithTenant.room.id, true)
                     onDismiss()
                 }) {
-                    Text("Hide Room")
+                    Text(stringResource(R.string.button_hide_room))
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 TextButton(onClick = {
                     roomViewModel.deleteRoom(roomWithTenant)
                     onDismiss()
                 }) {
-                    Text("Delete Room", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.button_delete_room), color = MaterialTheme.colorScheme.error)
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel_button)) // Reusing existing cancel_button string
             }
         },
         dismissButton = null
@@ -456,16 +459,16 @@ fun ConfirmRemoveTenantDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Confirm Move-out") },
-        text = { Text("Are you sure you want to record tenant '$tenantName' as moved out from room '$roomName' as of today?") },
+        title = { Text(stringResource(R.string.confirm_move_out_dialog_title)) },
+        text = { Text(stringResource(R.string.confirm_move_out_dialog_message, tenantName, roomName)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Confirm Move-out")
+                Text(stringResource(R.string.button_confirm_move_out))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel_button)) // Reusing existing cancel_button string
             }
         }
     )
@@ -482,11 +485,12 @@ fun AddEditTenantDialog(
     var mobile by remember(roomWithTenant.tenant) { mutableStateOf(roomWithTenant.tenant?.mobile ?: "") }
     var nameError by remember { mutableStateOf<String?>(null) }
     var mobileError by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
 
     val dialogTitle = if (roomWithTenant.tenant == null || roomWithTenant.tenant.moveOutDate != null) {
-        "Add New Tenant"
+        stringResource(R.string.add_tenant_dialog_title)
     } else {
-        "Edit Tenant Details"
+        stringResource(R.string.edit_tenant_dialog_title)
     }
 
     AlertDialog(
@@ -497,7 +501,7 @@ fun AddEditTenantDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; nameError = null },
-                    label = { Text("Tenant Name") },
+                    label = { Text(stringResource(R.string.label_tenant_name)) },
                     isError = nameError != null,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -510,7 +514,7 @@ fun AddEditTenantDialog(
                 OutlinedTextField(
                     value = mobile,
                     onValueChange = { mobile = it; mobileError = null },
-                    label = { Text("Tenant Mobile") },
+                    label = { Text(stringResource(R.string.label_tenant_mobile)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     isError = mobileError != null,
                     singleLine = true,
@@ -527,11 +531,11 @@ fun AddEditTenantDialog(
                 onClick = {
                     var valid = true
                     if (name.isBlank()) {
-                        nameError = "Name cannot be empty"
+                        nameError = context.getString(R.string.name_cannot_be_empty) // Reusing existing string
                         valid = false
                     }
                     if (mobile.isBlank()) {
-                        mobileError = "Mobile cannot be empty"
+                        mobileError = context.getString(R.string.mobile_cannot_be_empty)
                         valid = false
                     }
 
@@ -541,23 +545,23 @@ fun AddEditTenantDialog(
                         } else {
                             null
                         }
-                        
+
                         val moveInDateToUse = if (existingTenantIdToPass == null) {
-                            System.currentTimeMillis()
+                            System.currentTimeMillis() // Default to now if new tenant
                         } else {
-                            roomWithTenant.tenant!!.moveInDate
+                            roomWithTenant.tenant!!.moveInDate // Keep original if editing existing tenant
                         }
 
                         onConfirm(roomWithTenant.room.id, name, mobile, moveInDateToUse, existingTenantIdToPass)
                     }
                 }
             ) {
-                Text("Save")
+                Text(stringResource(R.string.button_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel_button)) // Reusing existing string
             }
         }
     )
@@ -571,28 +575,29 @@ fun AddRoomDialog(
 ) {
     var name by remember { mutableStateOf("") }
     var rent by remember { mutableStateOf("") }
-    var electricityRateString by remember { mutableStateOf("10.0") } 
-    var initialMeterReadingString by remember { mutableStateOf("") } 
+    var electricityRateString by remember { mutableStateOf("10.0") } // Default value
+    var initialMeterReadingString by remember { mutableStateOf("") }
+    val context = LocalContext.current
 
     var nameError by remember { mutableStateOf<String?>(null) }
-    var rentError by remember { mutableStateOf<String?>(null) } 
+    var rentError by remember { mutableStateOf<String?>(null) }
     var electricityRateError by remember { mutableStateOf<String?>(null) }
     var initialMeterReadingError by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add New Room") },
+        title = { Text(stringResource(R.string.add_room_dialog_title)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; nameError = null },
-                    label = { Text("Room Name/Number") },
+                    label = { Text(stringResource(R.string.label_room_name_number)) },
                     isError = nameError != null,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                val currentNameError = nameError 
+                val currentNameError = nameError
                 if (currentNameError != null) {
                     Text(currentNameError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
@@ -600,13 +605,13 @@ fun AddRoomDialog(
                 OutlinedTextField(
                     value = rent,
                     onValueChange = { rent = it; rentError = null },
-                    label = { Text("Monthly Rent (₹)") },
+                    label = { Text(stringResource(R.string.label_monthly_rent)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     isError = rentError != null,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                val currentRentError = rentError 
+                val currentRentError = rentError
                 if (currentRentError != null) {
                     Text(currentRentError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
@@ -614,7 +619,7 @@ fun AddRoomDialog(
                 OutlinedTextField(
                     value = electricityRateString,
                     onValueChange = { electricityRateString = it; electricityRateError = null },
-                    label = { Text("Electricity Rate per Unit (₹)") },
+                    label = { Text(stringResource(R.string.label_electricity_rate_per_unit)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     isError = electricityRateError != null,
                     singleLine = true,
@@ -625,16 +630,16 @@ fun AddRoomDialog(
                     Text(currentElectricityRateError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField( 
+                OutlinedTextField(
                     value = initialMeterReadingString,
                     onValueChange = { initialMeterReadingString = it; initialMeterReadingError = null },
-                    label = { Text("Initial Meter Reading (Optional)") },
+                    label = { Text(stringResource(R.string.label_initial_meter_reading_optional)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     isError = initialMeterReadingError != null,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                val currentInitialMeterReadingError = initialMeterReadingError 
+                val currentInitialMeterReadingError = initialMeterReadingError
                 if (currentInitialMeterReadingError != null) {
                     Text(currentInitialMeterReadingError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
@@ -645,31 +650,31 @@ fun AddRoomDialog(
                 onClick = {
                     var valid = true
                     if (name.isBlank()) {
-                        nameError = "Name cannot be empty"
+                        nameError = context.getString(R.string.name_cannot_be_empty) // Reusing existing string
                         valid = false
                     }
 
                     val rentDouble = rent.toDoubleOrNull()
                     if (rent.isBlank()) {
-                        rentError = "Rent cannot be empty"
+                        rentError = context.getString(R.string.rent_cannot_be_empty)
                         valid = false
                     } else if (rentDouble == null || rentDouble <= 0) {
-                        rentError = "Please enter a valid positive rent amount"
+                        rentError = context.getString(R.string.error_invalid_positive_rent)
                         valid = false
                     }
 
                     val electricityRateDouble = electricityRateString.toDoubleOrNull()
                     if (electricityRateString.isBlank()) {
-                        electricityRateError = "Rate cannot be empty"
+                        electricityRateError = context.getString(R.string.rate_cannot_be_empty)
                         valid = false
                     } else if (electricityRateDouble == null || electricityRateDouble < 0) {
-                        electricityRateError = "Please enter a valid rate (e.g., 10.0)"
+                        electricityRateError = context.getString(R.string.error_invalid_rate)
                         valid = false
                     }
 
                     val initialMeterReadingDouble = initialMeterReadingString.toDoubleOrNull()
                     if (initialMeterReadingString.isNotBlank() && (initialMeterReadingDouble == null || initialMeterReadingDouble < 0)) {
-                        initialMeterReadingError = "Please enter a valid non-negative reading or leave blank"
+                        initialMeterReadingError = context.getString(R.string.error_invalid_meter_reading_optional)
                         valid = false
                     }
 
@@ -678,12 +683,12 @@ fun AddRoomDialog(
                     }
                 }
             ) {
-                Text("Add")
+                Text(stringResource(R.string.add_button)) // Reusing existing add_button string
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel_button)) // Reusing existing cancel_button string
             }
         }
     )
