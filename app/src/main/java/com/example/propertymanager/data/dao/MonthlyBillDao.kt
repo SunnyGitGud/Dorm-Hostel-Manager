@@ -33,4 +33,7 @@ interface MonthlyBillDao {
 
     @Query("DELETE FROM monthly_bills WHERE id = :billId")
     suspend fun deleteBillById(billId: Int): Int // Added delete function, returns num rows deleted
+
+    @Query("SELECT * FROM monthly_bills")
+    fun getAllBillsStream(): Flow<List<MonthlyBillEntity>> // ADDED FOR REACTIVE UPDATES
 }

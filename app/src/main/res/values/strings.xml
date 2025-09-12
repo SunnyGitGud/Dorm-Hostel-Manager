@@ -47,4 +47,8 @@
     <string name="status_due">Due: %1$s</string>
     <string name="status_advance">Advance: %1$s</string>
     <string name="status_paid">Paid</string>
+    <string name="prorate_rent_dialog_title">Prorate Rent?</string>
+    <string name="prorate_rent_dialog_message">Do you want to prorate rent for tenants who moved in during the current month based on their move-in date?</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
 </resources>

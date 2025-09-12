@@ -262,11 +262,10 @@ class RoomViewModel(
                 val tenantForPreviousBillObjectPeriod = tenantRepository.getTenantForBillPeriod(roomId, startOfPrevBillMonthForTenantCheck, endOfPrevBillMonthForTenantCheck)
                 if (tenantForPreviousBillObjectPeriod != null && tenantForRequestedPeriod.id == tenantForPreviousBillObjectPeriod.id) {
                     val prevBalance = previousMonthBillObject.totalAmountDue - previousMonthBillObject.amountPaid
-                    if (prevBalance > 0.001) { 
-                         calculatedPreviousMonthDues = prevBalance
-                    } else {
-                        calculatedPreviousMonthDues = 0.0 
-                    }
+                    // Carry forward the balance directly.
+                    // If prevBalance is positive, it's dues.
+                    // If prevBalance is negative, it's an advance.
+                    calculatedPreviousMonthDues = prevBalance
                 }
             }
         }

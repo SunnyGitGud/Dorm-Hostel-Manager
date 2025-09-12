@@ -42,4 +42,9 @@ class MonthlyBillRepository(private val monthlyBillDao: MonthlyBillDao) {
     suspend fun deleteBillById(billId: Int): Int {
         return monthlyBillDao.deleteBillById(billId)
     }
+
+    // ADDED FOR REACTIVE UPDATES IN PropertyViewModel
+    fun getAllBillsStream(): Flow<List<MonthlyBillEntity>> {
+        return monthlyBillDao.getAllBillsStream()
+    }
 }

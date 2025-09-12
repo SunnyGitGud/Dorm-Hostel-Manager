@@ -133,6 +133,8 @@ fun PropertyScreen(
     val importStatus by viewModel.importStatus.collectAsState()
     val currentLanguageCodeFromViewModel by viewModel.currentLanguageCode.collectAsState()
     val languageChangeRequiresRestart by viewModel.languageChangeRequiresRestart.collectAsState()
+    val showProrateRentDialog by viewModel.showProrateRentDialog.collectAsState()
+    val prorationStatusMessage by viewModel.prorationStatusMessage.collectAsState() // ADDED for Toast
 
     var showAddPropertyDialog by remember { mutableStateOf(false) }
     var selectedPropertyForOptions by remember { mutableStateOf<PropertyEntity?>(null) }
@@ -223,6 +225,14 @@ fun PropertyScreen(
         importStatus?.let {
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
             viewModel.clearImportStatus() 
+        }
+    }
+
+    // ADDED: LaunchedEffect for prorationStatusMessage
+    LaunchedEffect(prorationStatusMessage) {
+        prorationStatusMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            viewModel.clearProrationStatusMessage()
         }
     }
 
@@ -396,6 +406,25 @@ fun PropertyScreen(
                         showLanguageDialog = false
                     },
                     onDismiss = { showLanguageDialog = false }
+                )
+            }
+
+            // ADDED: Prorate Rent Dialog after import
+            if (showProrateRentDialog) {
+                AlertDialog(
+                    onDismissRequest = { viewModel.userAcknowledgedProrateDialog() },
+                    title = { Text(stringResource(R.string.prorate_rent_dialog_title)) }, // Needs R.string.prorate_rent_dialog_title
+                    text = { Text(stringResource(R.string.prorate_rent_dialog_message)) },   // Needs R.string.prorate_rent_dialog_message
+                    confirmButton = {
+                        TextButton(onClick = { viewModel.onConfirmProrateRent() }) {
+                            Text(stringResource(R.string.yes))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { viewModel.userAcknowledgedProrateDialog() }) {
+                            Text(stringResource(R.string.no))
+                        }
+                    }
                 )
             }
         }

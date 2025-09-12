@@ -4,7 +4,10 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.propertymanager.data.entities.MonthlyBillEntity
 import com.example.propertymanager.data.entities.PropertyEntity
+import com.example.propertymanager.data.entities.RoomEntity
+import com.example.propertymanager.data.entities.TenantEntity
 import com.example.propertymanager.data.repository.PropertyRepository
 import com.example.propertymanager.data.repository.RoomRepository
 import com.example.propertymanager.data.repository.MonthlyBillRepository
@@ -68,6 +71,12 @@ class PropertyViewModel(
     private val _languageChangeRequiresRestart = MutableStateFlow(false)
     val languageChangeRequiresRestart: StateFlow<Boolean> = _languageChangeRequiresRestart.asStateFlow()
 
+    private val _showProrateRentDialog = MutableStateFlow(false)
+    val showProrateRentDialog: StateFlow<Boolean> = _showProrateRentDialog.asStateFlow()
+
+    private val _prorationStatusMessage = MutableStateFlow<String?>(null)
+    val prorationStatusMessage: StateFlow<String?> = _prorationStatusMessage.asStateFlow()
+
     private val currencyFormatter = NumberFormat.getCurrencyInstance(Locale.Builder().setLanguage("en").setRegion("IN").build())
 
     init {
@@ -78,6 +87,14 @@ class PropertyViewModel(
                 _properties.value = propertyList
                 updatePropertyFinancialSummaries(propertyList)
                 updatePropertyRoomSummaries(propertyList)
+            }
+        }
+        // Listen for bill changes to update summaries reactively
+        viewModelScope.launch {
+            monthlyBillRepository.getAllBillsStream().collectLatest { allBills ->
+                Log.d("PropertyViewModel", "Bill stream emitted (count: ${allBills.size}), re-calculating all property summaries.")
+                updatePropertyFinancialSummaries(_properties.value) // Use current properties list
+                updatePropertyRoomSummaries(_properties.value)   // Use current properties list
             }
         }
     }
@@ -106,6 +123,10 @@ class PropertyViewModel(
 
     fun clearImportStatus() {
         _importStatus.value = null
+    }
+    
+    fun clearProrationStatusMessage() {
+        _prorationStatusMessage.value = null
     }
 
     private suspend fun calculatePropertyFinancialSummary(property: PropertyEntity): PropertyFinancialSummary {
@@ -225,9 +246,7 @@ class PropertyViewModel(
     fun setPropertyHiddenStatus(propertyId: Int, isHidden: Boolean) {
         viewModelScope.launch {
             propertyRepository.updatePropertyHiddenStatus(propertyId, isHidden)
-            val currentProps = _properties.value
-            updatePropertyFinancialSummaries(currentProps.filterNot { it.isHidden })
-            updatePropertyRoomSummaries(currentProps.filterNot { it.isHidden })
+            // The reactive collection of properties will trigger summary updates.
         }
     }
 
@@ -266,10 +285,101 @@ class PropertyViewModel(
             val result: ImportResult = dataImportExportService.processImportData(csvString)
             _importStatus.value = result.message
 
-            val currentProps = propertyRepository.getAllProperties().first()
-            _properties.value = currentProps 
-            updatePropertyFinancialSummaries(currentProps)
-            updatePropertyRoomSummaries(currentProps)
+            if (result.successfulRecords > 0) {
+                _showProrateRentDialog.value = true
+            }
+            // Refresh properties & summaries happens reactively via collectors
         }
+    }
+
+    fun userAcknowledgedProrateDialog() {
+        _showProrateRentDialog.value = false
+    }
+
+    fun onConfirmProrateRent() {
+        _showProrateRentDialog.value = false
+        viewModelScope.launch {
+            executeProrationLogic()
+        }
+    }
+
+    private suspend fun executeProrationLogic() {
+        Log.d("PropertyViewModel", "Proration logic execution started.")
+        var proratedTenantsCount = 0
+        val currentCalendar = Calendar.getInstance()
+        val currentSystemYear = currentCalendar.get(Calendar.YEAR)
+        val currentSystemMonth = currentCalendar.get(Calendar.MONTH) + 1 // Calendar.MONTH is 0-indexed
+
+        val activeProperties = _properties.value.filter { !it.isHidden }
+
+        for (property in activeProperties) {
+            val roomsInProperty = roomRepository.getRoomsForProperty(property.id).first()
+            for (roomWithTenant in roomsInProperty) {
+                val room = roomWithTenant.room ?: continue
+                // CORRECTED: Changed getTenantsForRoom to getAllTenantsForRoom
+                val tenantsInRoom: List<TenantEntity> = tenantRepository.getAllTenantsForRoom(room.id).first()
+                
+                for (tenant in tenantsInRoom) {
+                    if (tenant.moveOutDate != null && tenant.moveOutDate!! < currentCalendar.timeInMillis) {
+                        continue // Skip tenants who have already moved out
+                    }
+
+                    val moveInCalendar = Calendar.getInstance().apply { timeInMillis = tenant.moveInDate }
+                    val moveInYear = moveInCalendar.get(Calendar.YEAR)
+                    val moveInMonth = moveInCalendar.get(Calendar.MONTH) + 1
+                    val moveInDay = moveInCalendar.get(Calendar.DAY_OF_MONTH)
+
+                    // Check if tenant moved in the current system month and not on the 1st day
+                    if (moveInYear == currentSystemYear && moveInMonth == currentSystemMonth && moveInDay > 1) {
+                        var bill = monthlyBillRepository.getBillForRoomMonthYearSuspend(room.id, currentSystemYear, currentSystemMonth)
+                        
+                        val fullRent = room.rent
+                        val totalDaysInMonth = moveInCalendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+                        val daysOccupied = totalDaysInMonth - moveInDay + 1
+                        val proratedRent = if (totalDaysInMonth > 0) (fullRent / totalDaysInMonth) * daysOccupied else fullRent
+
+                        if (bill != null) {
+                            // Prorate if not already explicitly prorated (isFullRentAppliedOverride is true or null)
+                            // and rentAtBillingTime is different from newly calculated proratedRent (allowing for small float diffs)
+                            val needsProration = (bill.isFullRentAppliedOverride != false) && (abs(bill.rentAtBillingTime - proratedRent) > 0.001)
+                            if (needsProration) {
+                                bill.rentAtBillingTime = proratedRent
+                                bill.isFullRentAppliedOverride = false
+                                // bill.calculateTotalDue() // This is called inside upsertBill
+                                monthlyBillRepository.upsertBill(bill)
+                                proratedTenantsCount++
+                                Log.d("PropertyViewModel", "Prorated rent for existing bill: Tenant ${tenant.id}, Room ${room.id}, Bill ${bill.id}")
+                            }
+                        } else {
+                            // Bill does not exist, create a new one with prorated rent
+                            val newBill = MonthlyBillEntity(
+                                roomId = room.id,
+                                year = currentSystemYear,
+                                month = currentSystemMonth,
+                                tenantIdAtBillingTime = tenant.id,
+                                tenantNameAtBillingTime = tenant.name,
+                                rentAtBillingTime = proratedRent,
+                                isFullRentAppliedOverride = false,
+                                electricityRateAtBillingTime = room.electricityRatePerUnit,
+                                previousMonthDues = 0.0, // Assuming 0 for a new mover's first bill post-import
+                                dueDate = Calendar.getInstance().apply { set(currentSystemYear, currentSystemMonth - 1, 5) }.timeInMillis,
+                                isInitialReadingRolledOver = false
+                            )
+                            // newBill.calculateTotalDue() // This is called inside upsertBill
+                            monthlyBillRepository.upsertBill(newBill)
+                            proratedTenantsCount++
+                            Log.d("PropertyViewModel", "Created new prorated bill: Tenant ${tenant.id}, Room ${room.id}")
+                        }
+                    }
+                }
+            }
+        }
+
+        if (proratedTenantsCount > 0) {
+            _prorationStatusMessage.value = "Proration applied for $proratedTenantsCount tenant(s)."
+        } else {
+            _prorationStatusMessage.value = "No new tenants required proration for the current month."
+        }
+        Log.d("PropertyViewModel", "Proration logic finished. Processed $proratedTenantsCount tenants.")
     }
 }
