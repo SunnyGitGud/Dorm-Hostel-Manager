@@ -1,7 +1,7 @@
 # Property Manager (India)
 
 <p align="center">
-  <img src="screenshots/properties.png" width="250"/>
+  <img src="screenshots/logo.png" width="150"/>
   <br/>
   <strong>A comprehensive, modern, and easy-to-use Android application to help you manage your properties, rooms, tenants, and bills, with a focus on the Indian market.</strong>
 </p>
@@ -36,6 +36,11 @@ The app is packed with features to make property management seamless and efficie
 - **Payment Tracking**: Record full or partial payments for each bill. The app clearly shows the remaining balance, if any.
 - **Bill History**: Access a detailed, filterable history of all past bills for any room. Filter by year or tenant to find what you need quickly.
 
+<p align="center">
+  <img src="screenshots/bill.png" width="250"/>
+</p>
+
+
 ### 🌐 Advanced Data & Sharing
 - **Data Import & Export**: Seamlessly import and export your property, room, tenant, and billing data using CSV or plain text formats. Perfect for backups or migrating to a new device.
 - **Intelligent Import**: The app intelligently handles imported data, updating existing records and creating new ones while preserving data integrity.
@@ -44,6 +49,10 @@ The app is packed with features to make property management seamless and efficie
 ### 🎨 Personalization
 - **Light & Dark Themes**: Switch between a beautiful light or dark theme for comfortable viewing in any lighting condition.
 - **Multi-Language Support**: The application is fully localized for both English and Hindi, with the ability to switch languages on the fly.
+
+<p align="center">
+  <img src="screenshots/language.png" width="250"/>
+</p>
 
 ---
 
@@ -75,4 +84,8 @@ Please make sure to update tests as appropriate.
 
 ## License
 
-[MIT]
+This project is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/).
+
+<a rel="license" href="http://creativecommons.org/licenses/by-nc/4.0/"><img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by-nc/4.0/88x31.png" /></a>
+
+This license allows you to share and adapt the material for non-commercial purposes, as long as you give appropriate credit. You may not use the material for commercial purposes.
