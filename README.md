@@ -61,7 +61,7 @@ The app is packed with features to make property management seamless and efficie
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/SunnyGitGud/Dorm-Hostel-Manager
+    git clone https://github.com/SunnyGitGud/Property-Manager-India-
     ```
 2.  Open the project in Android Studio (latest stable version recommended).
 3.  Let Android Studio download the necessary Gradle dependencies.
