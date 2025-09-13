@@ -23,7 +23,6 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
-import kotlin.math.ceil
 
 data class ImportResult(
     val message: String,
@@ -95,11 +94,11 @@ class DataImportExportService(
         format: ExportFormat
     ): String {
         val mainBuilder = StringBuilder()
-        val systemCalendar = Calendar.getInstance() // For current year/month check
+        val systemCalendar = Calendar.getInstance()
         val actualCurrentYear = systemCalendar.get(Calendar.YEAR)
-        val actualCurrentMonth = systemCalendar.get(Calendar.MONTH) + 1 // Calendar.MONTH is 0-indexed
+        val actualCurrentMonth = systemCalendar.get(Calendar.MONTH) + 1
 
-        val cal = Calendar.getInstance() // For date manipulations specific to export
+        val cal = Calendar.getInstance()
 
         if (format == ExportFormat.TEXT) {
             mainBuilder.append("Property Data Export - ")
@@ -107,27 +106,24 @@ class DataImportExportService(
             mainBuilder.append("$year\n=====================================\n\n")
         } else { 
             mainBuilder.append(
-                "Property Name,Room Name,Year,Month,Tenant Name At Billing Time," +
-                "Rent At Billing Time,Electricity Units,Electricity Rate At Billing Time," +
-                "Water Bill,Other Charges,Previous Month Dues," +
-                "Is Full Rent Applied Override,Month End Meter Reading,Other Charges Description," +
-                "Is Initial Reading Rolled Over,Due Date,Payment Date," +
-                "Total Amount Due (Calculated by App),Amount Paid (CSV),Is Fully Paid (Calculated by App)\n"
+                "\"Property Name\",\"Room Name\",\"Room Initial Meter Reading\",\"Year\",\"Month\",\"Tenant Name At Billing Time\"," +
+                "\"Rent At Billing Time\",\"Bill Period Start Reading\",\"Bill Period End Reading\",\"Electricity Units\",\"Electricity Rate At Billing Time\",\"Water Bill\",\"Other Charges\",\"Previous Month Dues\"," +
+                "\"Is Full Rent Applied Override\",\"Other Charges Description\",\"Is Initial Reading Rolled Over\",\"Due Date\",\"Payment Date\"," +
+                "\"Total Amount Due (Calculated by App)\",\"Amount Paid (CSV)\",\"Is Fully Paid (Calculated by App)\"\n"
             )
         }
 
         for (property in properties) {
-            val roomsWithTenants: List<RoomWithTenant> = roomRepository.getRoomsForProperty(property.id).first() 
+            val roomsWithTenants: List<RoomWithTenant> = roomRepository.getRoomsForProperty(property.id).first()
             if (roomsWithTenants.isEmpty()) continue
 
             val propertySpecificTextBuilder = if (format == ExportFormat.TEXT) StringBuilder() else null
 
             for (roomHolder in roomsWithTenants) { 
-                val room = roomHolder.room 
+                val room = roomHolder.room
                 val monthsToIterate = if (monthInput != null) listOf(monthInput) else (1..12).toList()
 
                 for (currentMonthInLoop in monthsToIterate) {
-                    // Skip future months in the current year for a full year export
                     if (monthInput == null && year == actualCurrentYear && currentMonthInLoop > actualCurrentMonth) {
                         continue
                     }
@@ -144,24 +140,30 @@ class DataImportExportService(
 
                     if (bill != null && bill.id != 0) {
                         val installments = paymentInstallmentRepository.getInstallmentsForBillSuspend(bill.id)
-                        bill.amountPaid = installments.sumOf { it.amount } 
-                        bill.calculateTotalDue() 
+                        bill.amountPaid = installments.sumOf { it.amount }
+                        bill.calculateTotalDue()
+
+                        val prevCal = Calendar.getInstance().apply { set(year, currentMonthInLoop - 1, 1); add(Calendar.MONTH, -1) }
+                        val prevBill = monthlyBillRepository.getBillForRoomMonthYearSuspend(room.id, prevCal.get(Calendar.YEAR), prevCal.get(Calendar.MONTH) + 1)
+                        val startReading = prevBill?.monthEndMeterReading ?: room.initialMeterReading
 
                         if (format == ExportFormat.CSV) {
                             val row = mutableListOf<String>()
                             row.add(escapeCsv(property.name))
                             row.add(escapeCsv(room.name))
+                            row.add(room.initialMeterReading?.toString() ?: "")
                             row.add(year.toString())
                             row.add(currentMonthInLoop.toString())
                             row.add(escapeCsv(bill.tenantNameAtBillingTime ?: tenantNameForContext))
                             row.add(bill.rentAtBillingTime.toString())
+                            row.add(startReading?.toString() ?: "")
+                            row.add(bill.monthEndMeterReading?.toString() ?: "")
                             row.add(bill.electricityUnits?.toString() ?: "")
                             row.add(bill.electricityRateAtBillingTime?.toString() ?: "")
                             row.add(bill.waterBill.toString())
                             row.add(bill.otherCharges.toString())
                             row.add(bill.previousMonthDues.toString())
                             row.add(bill.isFullRentAppliedOverride?.toString()?.uppercase(Locale.US) ?: "")
-                            row.add(bill.monthEndMeterReading?.toString() ?: "")
                             row.add(escapeCsv(bill.otherChargesDescription))
                             row.add(bill.isInitialReadingRolledOver.toString().uppercase(Locale.US))
                             row.add(formatDate(bill.dueDate))
@@ -170,12 +172,13 @@ class DataImportExportService(
                             row.add(bill.amountPaid.toString())
                             row.add(bill.isFullyPaid.toString().uppercase(Locale.US))
                             mainBuilder.append(row.joinToString(",")).append("\n")
-                        } else { 
+                        } else {
                             propertySpecificTextBuilder?.apply {
                                 append("  Room: ${room.name}\n")
                                 append("    Tenant: ${bill.tenantNameAtBillingTime ?: tenantNameForContext}\n")
                                 append("    Period: $currentMonthInLoop/$year\n")
                                 append("    Rent Applied: ${currencyFormatter.format(bill.rentAtBillingTime)}\n")
+                                startReading?.let { sr -> append("    Meter Reading: $sr to ${bill.monthEndMeterReading ?: "N/A"}\n") }
                                 bill.electricityUnits?.let { eu -> append("    Electricity Units: $eu at ${bill.electricityRateAtBillingTime?.let { currencyFormatter.format(it) } ?: "N/A"}\n") }
                                 append("    Water Bill: ${currencyFormatter.format(bill.waterBill)}\n")
                                 append("    Other Charges: ${currencyFormatter.format(bill.otherCharges)} (${bill.otherChargesDescription ?: ""})\n")
@@ -188,17 +191,18 @@ class DataImportExportService(
                                 append("    --------------------------\n")
                             }
                         }
-                    } else { 
+                    } else {
                         if (format == ExportFormat.CSV) {
                             val row = mutableListOf<String>()
                             row.add(escapeCsv(property.name))
                             row.add(escapeCsv(room.name))
+                            row.add(room.initialMeterReading?.toString() ?: "")
                             row.add(year.toString())
                             row.add(currentMonthInLoop.toString())
                             row.add(escapeCsv(tenantNameForContext))
-                            repeat(15) { row.add("") }
+                            repeat(16) { row.add("") }
                             mainBuilder.append(row.joinToString(",")).append("\n")
-                        } else { 
+                        } else {
                              propertySpecificTextBuilder?.apply {
                                 append("  Room: ${room.name}\n")
                                 append("    Tenant: $tenantNameForContext\n")
@@ -239,39 +243,41 @@ class DataImportExportService(
                         continue
                     }
                     processedRecords++
-                    val tokens = line.split(',').map { it.trim().removeSurrounding("\"") } 
+                    val tokens = line.split(',').map { it.trim().removeSurrounding("\"") }
 
-                    if (tokens.size < 20) {
+                    if (tokens.size < 22) {
                         Log.w("ImportCSV", "Skipping malformed line ${i + 1} (not enough columns: ${tokens.size}): $line")
-                        errorMessages.add("Line ${i + 1}: Malformed (expected 20 columns, got ${tokens.size}).")
+                        errorMessages.add("Line ${i + 1}: Malformed (expected 22 columns, got ${tokens.size}).")
                         rowErrors++; continue
                     }
                     
                     try {
                         val propertyNameStr = tokens[0]
                         val roomNameStr = tokens[1]
-                        val yearVal = tokens[2].toIntOrNull()
-                        val monthVal = tokens[3].toIntOrNull()
-                        val tenantNameAtBillingTimeStr = tokens[4]
+                        val roomInitialReadingFromCsv = parseCurrencyStringToDouble(tokens[2])
+                        val yearVal = tokens[3].toIntOrNull()
+                        val monthVal = tokens[4].toIntOrNull()
+                        val tenantNameAtBillingTimeStr = tokens[5]
                         
-                        val rentAtBillingTime = parseCurrencyStringToDouble(tokens[5]) ?: 0.0
-                        val electricityUnits = parseCurrencyStringToDouble(tokens[6])
-                        val electricityRateAtBillingTime = parseCurrencyStringToDouble(tokens[7])
-                        val waterBill = parseCurrencyStringToDouble(tokens[8]) ?: 0.0
-                        val otherCharges = parseCurrencyStringToDouble(tokens[9]) ?: 0.0
-                        val previousMonthDues = parseCurrencyStringToDouble(tokens[10]) ?: 0.0
+                        val rentAtBillingTime = parseCurrencyStringToDouble(tokens[6]) ?: 0.0
+                        val startReading = parseCurrencyStringToDouble(tokens[7])
+                        val endReading = parseCurrencyStringToDouble(tokens[8])
+                        val electricityUnits = parseCurrencyStringToDouble(tokens[9])
+                        val electricityRateAtBillingTime = parseCurrencyStringToDouble(tokens[10])
+                        val waterBill = parseCurrencyStringToDouble(tokens[11]) ?: 0.0
+                        val otherCharges = parseCurrencyStringToDouble(tokens[12]) ?: 0.0
+                        val previousMonthDues = parseCurrencyStringToDouble(tokens[13]) ?: 0.0
                         
-                        val isFullRentAppliedOverride = parseBoolean(tokens[11])
-                        val monthEndMeterReading = parseCurrencyStringToDouble(tokens[12])
-                        val otherChargesDescription = tokens[13].takeIf { it.isNotBlank() }
-                        val isInitialReadingRolledOver = parseBoolean(tokens[14]) ?: false
+                        val isFullRentAppliedOverride = parseBoolean(tokens[14])
+                        val otherChargesDescription = tokens[15].takeIf { it.isNotBlank() }
+                        val isInitialReadingRolledOver = parseBoolean(tokens[16]) ?: false
                         
-                        val dueDateVal = parseDate(tokens[15]) ?: Calendar.getInstance().apply { set(yearVal ?: 0, (monthVal ?: 1)-1, 5) }.timeInMillis
-                        val paymentDateFromCsv = parseDate(tokens[16])
+                        val dueDateVal = parseDate(tokens[17]) ?: Calendar.getInstance().apply { set(yearVal ?: 0, (monthVal ?: 1)-1, 5) }.timeInMillis
+                        val paymentDateFromCsv = parseDate(tokens[18])
                         
-                        val totalAmountDueFromCsv = parseCurrencyStringToDouble(tokens[17])
-                        val amountPaidFromCsv = parseCurrencyStringToDouble(tokens[18]) ?: 0.0
-                        val isFullyPaidFromCsv = parseBoolean(tokens[19])
+                        val totalAmountDueFromCsv = parseCurrencyStringToDouble(tokens[19])
+                        val amountPaidFromCsv = parseCurrencyStringToDouble(tokens[20]) ?: 0.0
+                        val isFullyPaidFromCsv = parseBoolean(tokens[21])
 
                         if (yearVal == null || monthVal == null || monthVal !in 1..12) {
                              Log.w("ImportCSV", "Skipping line ${i+1} (invalid year/month): $line"); errorMessages.add("Line ${i+1}: Invalid year/month."); rowErrors++; continue
@@ -288,16 +294,15 @@ class DataImportExportService(
 
                         var currentRoom = roomRepository.getByNameAndPropertyId(roomNameStr, currentProperty.id)
                         if (currentRoom == null) {
-                            val newRoomId = roomRepository.insert(RoomEntity(propertyId = currentProperty.id, name = roomNameStr, rent = rentAtBillingTime, isHidden = false))
+                            val newRoomId = roomRepository.insert(RoomEntity(propertyId = currentProperty.id, name = roomNameStr, rent = rentAtBillingTime, isHidden = false, initialMeterReading = roomInitialReadingFromCsv))
                             currentRoom = roomRepository.getByNameAndPropertyId(roomNameStr, currentProperty.id) 
                             if (currentRoom == null) {
                                  Log.e("ImportCSV", "Failed to create/retrieve room $roomNameStr for property ${currentProperty.name}. Line ${i+1}"); errorMessages.add("Line ${i+1}: Room creation failed."); rowErrors++; continue
                             }
-                        } else { 
-                            if (currentRoom.rent != rentAtBillingTime) {
-                                // Consider if room's default rent should be updated, e.g.:
-                                // roomRepository.updateRoomRent(currentRoom.id, rentAtBillingTime) // Requires Dao method
-                            }
+                        } else {
+                             if ((currentRoom.rent != rentAtBillingTime && rentAtBillingTime > 0) || (currentRoom.initialMeterReading != roomInitialReadingFromCsv && roomInitialReadingFromCsv != null)) {
+                                roomRepository.update(currentRoom.copy(rent = rentAtBillingTime, initialMeterReading = roomInitialReadingFromCsv ?: currentRoom.initialMeterReading))
+                             }
                         }
                         
                         var tenantIdForBill: Int? = null
@@ -338,8 +343,8 @@ class DataImportExportService(
                         bill.tenantNameAtBillingTime = if (tenantIdForBill != null) tenantNameAtBillingTimeStr else null
                         bill.rentAtBillingTime = rentAtBillingTime
                         bill.isFullRentAppliedOverride = isFullRentAppliedOverride
-                        bill.monthEndMeterReading = monthEndMeterReading
-                        bill.electricityUnits = electricityUnits
+                        bill.monthEndMeterReading = endReading
+                        bill.electricityUnits = electricityUnits ?: if(startReading != null && endReading != null && endReading >= startReading) endReading - startReading else null
                         bill.electricityRateAtBillingTime = electricityRateAtBillingTime
                         bill.waterBill = waterBill
                         bill.otherCharges = otherCharges
